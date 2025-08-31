@@ -388,8 +388,28 @@ class DTRDB {
                 }
             });
 
-            // Get unique alert types from the database
-            const alertTypes = [...new Set(notifications.map(n => n.type || n.abnormalitytype).filter(Boolean))];
+            // Get unique alert types from the database and clean them up
+            const rawAlertTypes = notifications.map(n => n.abnormalitytype || n.type).filter(Boolean);
+            
+            // Clean up alert types to remove common prefixes and simplify
+            const cleanAlertType = (alertType) => {
+                if (!alertType) return null;
+                
+                let cleaned = alertType
+                    .replace(/^HT\s+Fuse\s+Blown\s*\([^)]+\)/i, 'HT Fuse Blown') // Simplify "HT Fuse Blown (R - Phase)"
+                    .replace(/^\s+|\s+$/g, '') // Trim whitespace
+                    .replace(/^,\s*/, '') // Remove leading comma
+                    .replace(/,\s*$/, ''); // Remove trailing comma
+                
+                // If we ended up with empty string after cleaning, use a fallback
+                if (!cleaned || cleaned.trim() === '') {
+                    cleaned = 'Abnormality Detected';
+                }
+                
+                return cleaned;
+            };
+            
+            const alertTypes = [...new Set(rawAlertTypes.map(cleanAlertType).filter(Boolean))];
 
             // Map months to trends data based on actual alert types
             const trendsData = months.map(monthData => {
@@ -406,9 +426,15 @@ class DTRDB {
                 
                 // Count by actual alert types
                 alertTypes.forEach(alertType => {
-                    const count = monthNotifications.filter(n => 
-                        (n.type === alertType || n.abnormalitytype === alertType)
-                    ).length;
+                    const count = monthNotifications.filter(n => {
+                        const rawType = n.abnormalitytype || n.type;
+                        if (!rawType) return false;
+                        
+                        // Clean the raw type and compare with the cleaned alert type
+                        const cleanedRawType = cleanAlertType(rawType);
+                        return cleanedRawType === alertType;
+                    }).length;
+                    
                     result[alertType.toLowerCase().replace(/\s+/g, '_') + '_count'] = count;
                 });
 
@@ -1935,6 +1961,318 @@ class DTRDB {
             };
         } catch (error) {
             console.error('Error fetching all meters data:', error);
+            throw error;
+        }
+    }
+
+    static async getFuseBlownMeters({ page = 1, pageSize = 20, search = '', locationId } = {}) {
+        try {
+            const skip = (page - 1) * pageSize;
+            const where = {};
+
+            // Filter by location if provided
+            if (locationId) {
+                where.locationId = locationId;
+            }
+
+            // Get all meters with their latest readings
+            const meters = await prisma.meters.findMany({
+                where,
+                include: {
+                    dtrs: {
+                        select: {
+                            id: true,
+                            dtrNumber: true,
+                            serialNumber: true
+                        }
+                    },
+                    locations: {
+                        select: {
+                            id: true,
+                            name: true,
+                            code: true
+                        }
+                    },
+                    meter_readings: {
+                        orderBy: { readingDate: 'desc' },
+                        take: 1,
+                        select: {
+                            currentR: true,
+                            currentY: true,
+                            currentB: true,
+                            voltageR: true,
+                            voltageY: true,
+                            voltageB: true,
+                            readingDate: true
+                        }
+                    }
+                }
+            });
+
+            // Filter meters that have fuse blown conditions
+            const fuseBlownMeters = meters.filter(meter => {
+                const latestReading = meter.meter_readings?.[0];
+                if (!latestReading) return false;
+
+                // Check LT Fuse Blown (any phase current is 0)
+                const ltFuseBlown = (latestReading.currentR === 0 || latestReading.currentY === 0 || latestReading.currentB === 0);
+                
+                // Check HT Fuse Blown (any phase voltage < 180V)
+                const htFuseBlown = (latestReading.voltageR !== null && latestReading.voltageR < 180) ||
+                                   (latestReading.voltageY !== null && latestReading.voltageY < 180) ||
+                                   (latestReading.voltageB !== null && latestReading.voltageB < 180);
+
+                return ltFuseBlown || htFuseBlown;
+            });
+
+            // Apply search filter if provided
+            let filteredMeters = fuseBlownMeters;
+            if (search) {
+                filteredMeters = fuseBlownMeters.filter(meter => 
+                    meter.meterNumber?.toLowerCase().includes(search.toLowerCase()) ||
+                    meter.dtrs?.dtrNumber?.toLowerCase().includes(search.toLowerCase()) ||
+                    meter.dtrs?.serialNumber?.toLowerCase().includes(search.toLowerCase()) ||
+                    meter.locations?.name?.toLowerCase().includes(search.toLowerCase())
+                );
+            }
+
+            const total = filteredMeters.length;
+            const paginatedMeters = filteredMeters.slice(skip, skip + pageSize);
+
+            // Process the data for frontend
+            const processedMeters = paginatedMeters.map((meter, index) => {
+                const globalIndex = skip + index + 1;
+                const latestReading = meter.meter_readings?.[0];
+                
+                // Determine fuse type
+                let fuseType = 'Unknown';
+                if (latestReading) {
+                    const ltFuseBlown = (latestReading.currentR === 0 || latestReading.currentY === 0 || latestReading.currentB === 0);
+                    const htFuseBlown = (latestReading.voltageR !== null && latestReading.voltageR < 180) ||
+                                       (latestReading.voltageY !== null && latestReading.voltageY < 180) ||
+                                       (latestReading.voltageB !== null && latestReading.voltageB < 180);
+                    
+                    if (ltFuseBlown && htFuseBlown) {
+                        fuseType = 'Both LT & HT';
+                    } else if (ltFuseBlown) {
+                        fuseType = 'LT Fuse';
+                    } else if (htFuseBlown) {
+                        fuseType = 'HT Fuse';
+                    }
+                }
+
+                // Calculate blown time (time since last reading)
+                let blownTime = 'Unknown';
+                if (latestReading?.readingDate) {
+                    const readingDate = new Date(latestReading.readingDate);
+                    const now = new Date();
+                    const diffMs = now - readingDate;
+                    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+                    const diffDays = Math.floor(diffHours / 24);
+                    
+                    if (diffDays > 0) {
+                        blownTime = `${diffDays} day(s) ago`;
+                    } else if (diffHours > 0) {
+                        blownTime = `${diffHours} hour(s) ago`;
+                    } else {
+                        blownTime = 'Less than 1 hour ago';
+                    }
+                }
+
+                return {
+                    slNo: globalIndex,
+                    meterNo: meter.meterNumber || 'N/A',
+                    dtrId: meter.dtrs?.dtrNumber || 'N/A',
+                    dtrName: meter.dtrs?.serialNumber || 'N/A',
+                    location: meter.locations?.name || 'N/A',
+                    fuseType,
+                    blownTime,
+                    lastReadingDate: latestReading?.readingDate ? new Date(latestReading.readingDate).toLocaleString('en-IN', {
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit',
+                        hour12: true
+                    }) : 'N/A',
+                    // Add current readings for reference
+                    currentR: latestReading?.currentR || 'N/A',
+                    currentY: latestReading?.currentY || 'N/A',
+                    currentB: latestReading?.currentB || 'N/A',
+                    voltageR: latestReading?.voltageR || 'N/A',
+                    voltageY: latestReading?.voltageY || 'N/A',
+                    voltageB: latestReading?.voltageB || 'N/A'
+                };
+            });
+
+            return {
+                data: processedMeters,
+                total,
+                page,
+                pageSize,
+                totalPages: Math.ceil(total / pageSize)
+            };
+        } catch (error) {
+            console.error('Error fetching fuse blown meters:', error);
+            throw error;
+        }
+    }
+
+    static async getOverloadedDTRs({ page = 1, pageSize = 20, search = '', locationId } = {}) {
+        try {
+            const skip = (page - 1) * pageSize;
+            const where = {
+                loadPercentage: { gt: 90 }
+            };
+
+            // Filter by location if provided
+            if (locationId) {
+                where.locationId = locationId;
+            }
+
+            // Add search filters to the database query
+            if (search) {
+                where.OR = [
+                    { dtrNumber: { contains: search, mode: 'insensitive' } },
+                    { serialNumber: { contains: search, mode: 'insensitive' } },
+                    { manufacturer: { contains: search, mode: 'insensitive' } },
+                    { model: { contains: search, mode: 'insensitive' } },
+                    { locations: { name: { contains: search, mode: 'insensitive' } } }
+                ];
+            }
+
+            // Get total count with search filters applied
+            const total = await prisma.dtrs.count({ where });
+
+            // Get overloaded DTRs with related data
+            const overloadedDTRs = await prisma.dtrs.findMany({
+                where,
+                include: {
+                    locations: {
+                        select: {
+                            id: true,
+                            name: true,
+                            code: true
+                        }
+                    },
+                    meters: {
+                        select: {
+                            id: true
+                        }
+                    }
+                },
+                skip,
+                take: pageSize,
+                orderBy: { loadPercentage: 'desc' }
+            });
+
+            // Process the data for frontend
+            const processedDTRs = overloadedDTRs.map((dtr, index) => {
+                const globalIndex = skip + index + 1;
+                
+                return {
+                    slNo: globalIndex,
+                    dtrId: dtr.dtrNumber || 'N/A',
+                    dtrName: dtr.serialNumber || 'N/A',
+                    manufacturer: dtr.manufacturer || 'N/A',
+                    model: dtr.model || 'N/A',
+                    capacity: dtr.capacity || 'N/A',
+                    loadPercentage: dtr.loadPercentage || 0,
+                    location: dtr.locations?.name || 'N/A',
+                    feedersCount: dtr.meters?.length || 0,
+                    status: dtr.status || 'N/A'
+                };
+            });
+
+            return {
+                data: processedDTRs,
+                total: total,
+                page,
+                pageSize,
+                totalPages: Math.ceil(total / pageSize)
+            };
+        } catch (error) {
+            console.error('Error fetching overloaded DTRs:', error);
+            throw error;
+        }
+    }
+
+    static async getUnderloadedDTRs({ page = 1, pageSize = 20, search = '', locationId } = {}) {
+        try {
+            const skip = (page - 1) * pageSize;
+            const where = {
+                loadPercentage: { lt: 30 }
+            };
+
+            // Filter by location if provided
+            if (locationId) {
+                where.locationId = locationId;
+            }
+
+            // Add search filters to the database query
+            if (search) {
+                where.OR = [
+                    { dtrNumber: { contains: search, mode: 'insensitive' } },
+                    { serialNumber: { contains: search, mode: 'insensitive' } },
+                    { manufacturer: { contains: search, mode: 'insensitive' } },
+                    { model: { contains: search, mode: 'insensitive' } },
+                    { locations: { name: { contains: search, mode: 'insensitive' } } }
+                ];
+            }
+
+            // Get total count with search filters applied
+            const total = await prisma.dtrs.count({ where });
+
+            // Get underloaded DTRs with related data
+            const underloadedDTRs = await prisma.dtrs.findMany({
+                where,
+                include: {
+                    locations: {
+                        select: {
+                            id: true,
+                            name: true,
+                            code: true
+                        }
+                    },
+                    meters: {
+                        select: {
+                            id: true
+                        }
+                    }
+                },
+                skip,
+                take: pageSize,
+                orderBy: { loadPercentage: 'asc' }
+            });
+
+            // Process the data for frontend
+            const processedDTRs = underloadedDTRs.map((dtr, index) => {
+                const globalIndex = skip + index + 1;
+                
+                return {
+                    slNo: globalIndex,
+                    dtrId: dtr.dtrNumber || 'N/A',
+                    dtrName: dtr.serialNumber || 'N/A',
+                    manufacturer: dtr.manufacturer || 'N/A',
+                    model: dtr.model || 'N/A',
+                    capacity: dtr.capacity || 'N/A',
+                    loadPercentage: dtr.loadPercentage || 0,
+                    location: dtr.locations?.name || 'N/A',
+                    feedersCount: dtr.meters?.length || 0,
+                    status: dtr.status || 'N/A'
+                };
+            });
+
+            return {
+                data: processedDTRs,
+                total: total,
+                page,
+                pageSize,
+                totalPages: Math.ceil(total / pageSize)
+            };
+        } catch (error) {
+            console.error('Error fetching underloaded DTRs:', error);
             throw error;
         }
     }

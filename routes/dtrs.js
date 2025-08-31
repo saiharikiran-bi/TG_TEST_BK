@@ -1,5 +1,5 @@
 import express from 'express';
-import { getDTRTable, getFeedersForDTR, getDTRAlerts, getDTRAlertsTrends, getDTRStats, getConsumptionStats, getFeederStats, getInstantaneousStats, getConsolidatedDTRStats, getDTRConsumptionAnalytics, getIndividualDTRAlerts, getKVAMetrics, getDTRFilterOptions, getMeterStatus, getFilterOptions, getAllMetersData, searchDTRs, getLTSideFuseBlownData, getUnbalancedDTRsData, getPowerFailureFeedersData, getHTSideFuseBlownData } from '../controllers/dtrController.js';
+import { getDTRTable, getFeedersForDTR, getDTRAlerts, getDTRAlertsTrends, getDTRStats, getConsumptionStats, getFeederStats, getInstantaneousStats, getConsolidatedDTRStats, getDTRConsumptionAnalytics, getIndividualDTRAlerts, getKVAMetrics, getDTRFilterOptions, getMeterStatus, getFilterOptions, getAllMetersData, getFuseBlownMeters, getOverloadedDTRs, getUnderloadedDTRs, searchDTRs, getLTSideFuseBlownData, getUnbalancedDTRsData, getPowerFailureFeedersData, getHTSideFuseBlownData } from '../controllers/dtrController.js';
 import { populateUserFromCookies } from '../utils/cookieUtils.js';
 
 const router = express.Router();
@@ -21,6 +21,9 @@ router.get('/alerts', getDTRAlerts);
 router.get('/alerts/trends', getDTRAlertsTrends);
 router.get('/filter/filter-options', getFilterOptions);
 router.get('/all-meters', getAllMetersData);
+router.get('/fuse-blown-meters', getFuseBlownMeters);
+router.get('/overloaded-dtrs', getOverloadedDTRs);
+router.get('/underloaded-dtrs', getUnderloadedDTRs);
 
 // Parameterized routes must come AFTER specific routes
 router.get('/:dtrId', getFeedersForDTR);
