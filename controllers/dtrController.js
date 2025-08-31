@@ -1,5 +1,8 @@
 import DTRDB from '../models/DTRDB.js';
 import { getDateTime, getDateInYMDFormat, getDateInMYFormat, fillMissingDatesDyno } from '../utils/utils.js';
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
 
 export const getDTRFilterOptions = async (req, res) => {
     try {
@@ -48,6 +51,7 @@ export const getDTRTable = async (req, res) => {
             status: status || undefined,
             locationId: effectiveLocationId
         });
+
         // Map the data to match frontend table columns exactly
         const mappedData = result.data.map((dtr, idx) => ({
             sNo: (result.page - 1) * result.pageSize + idx + 1,
@@ -99,6 +103,7 @@ export const getFeedersForDTR = async (req, res) => {
         }
         
         const feedersData = await DTRDB.getFeedersForDTR(dtrId);
+
         
         // Map feeders data to match frontend expectations
         const mappedFeeders = feedersData.feeders.map((feeder, idx) => ({
@@ -156,16 +161,38 @@ export const getDTRAlerts = async (req, res) => {
         // Only pass locationId if it's not null/undefined (null = show all data)
         const locationIdForFilter = userLocationId || null;
         
-        
-        
-        // Pass locationId to DTRDB method (null = all data, locationId = filtered data)
-        const alerts = await DTRDB.getDTRAlerts(locationIdForFilter);
+        // Get alerts from escalation_notifications table (same as DTRDetail and Feeders pages)
+        const alerts = await prisma.escalation_notifications.findMany({
+            where: locationIdForFilter ? {
+                meters: {
+                    dtrs: {
+                        locationId: locationIdForFilter
+                    }
+                }
+            } : {},
+            include: {
+                meters: {
+                    include: {
+                        dtrs: {
+                            include: {
+                                locations: true
+                            }
+                        }
+                    }
+                }
+            },
+            orderBy: { createdat: 'desc' },
+            take: 10 // Limit to latest 10 alerts for dashboard
+        });
         
         // Map alerts to match frontend table columns exactly
         const mappedAlerts = alerts.map(alert => ({
-            alert: alert.faultType || 'NA',
-            date: alert.createdAt ? new Date(alert.createdAt).toLocaleString() : 'NA',
-            status: alert.status || 'NA'
+            alertId: alert.id || 'NA',
+            type: alert.type || alert.abnormalitytype || 'NA',
+            feederName: alert.meternumber || alert.meters?.meterNumber || alert.meters?.serialNumber || 'N/A',
+            occuredOn: alert.createdat ? new Date(alert.createdat).toLocaleString() : 'NA',
+            status: alert.status || 'NA',
+            dtrNumber: alert.dtrnumber || alert.meters?.dtrs?.dtrNumber || 'N/A'
         }));
 
         res.json({
@@ -303,6 +330,7 @@ export const getInstantaneousStats = async (req, res) => {
     try {
         const { dtrId } = req.params;
         const stats = await DTRDB.getInstantaneousStats(dtrId);
+
         res.json({
             success: true,
             data: stats,
@@ -350,8 +378,12 @@ export const getDTRConsumptionAnalytics = async (req, res) => {
     try {
         const { dtrId } = req.params;
         
+
+        
         const consumptionOnDaily = await DTRDB.getDTRMainGraphAnalytics(dtrId, 'daily');
+
         const consumptionOnMonthly = await DTRDB.getDTRMainGraphAnalytics(dtrId, 'monthly');
+
         
         const { dailyxAxisData, dailysums } = consumptionOnDaily.reduce(
             (acc, item) => {
@@ -396,6 +428,8 @@ export const getDTRConsumptionAnalytics = async (req, res) => {
             xAxisData: monthly.dates,
             sums: monthly.values,
         };
+        
+
         
         res.status(200).json({
             status: 'success',
@@ -606,6 +640,7 @@ export const getFilterOptions = async (req, res) => {
         const { parentId, locationTypeId } = req.query; 
         const locationDB = new LocationDB()  
         const locations = await locationDB.getFilterOptions(parentId, locationTypeId);
+
         
         res.json({
             success: true,
