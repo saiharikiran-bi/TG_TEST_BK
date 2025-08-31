@@ -29,6 +29,7 @@ export const getDTRFilterOptions = async (req, res) => {
         });
     }
 };
+import LocationDB from '../models/LocationDB.js';
 
 export const getDTRTable = async (req, res) => {
     try {
@@ -187,7 +188,6 @@ export const getDTRAlerts = async (req, res) => {
 
 export const getDTRAlertsTrends = async (req, res) => {
     try {
-        // Get user's location from req.user (populated by middleware)
         const userLocationId = req.user?.locationId;
         
         // Only pass locationId if it's not null/undefined (null = show all data)
@@ -601,6 +601,28 @@ export const getMeterStatus = async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'An error occurred while fetching meter communication status',
+            error: error.message
+        });
+    }
+};
+
+export const getFilterOptions = async (req, res) => {
+    try {
+        const { parentId, locationTypeId } = req.query; 
+        const locationDB = new LocationDB()  
+        const locations = await locationDB.getFilterOptions(parentId, locationTypeId);
+        console.log('locationssss', locations);
+        
+        res.json({
+            success: true,
+            data: locations,
+            message: 'Filter options fetched successfully'
+        });
+    } catch (error) {
+        console.error('Error fetching filter options:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch filter options',
             error: error.message
         });
     }
