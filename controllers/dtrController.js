@@ -723,3 +723,32 @@ export const getAllMetersData = async (req, res) => {
     }
 };
 
+export const searchDTRs = async (req, res) => {
+    try {
+        const { query } = req.query;
+        
+        if (!query || query.length < 2) {
+            return res.status(400).json({
+                success: false,
+                message: 'Search query must be at least 2 characters long'
+            });
+        }
+
+        const searchResults = await DTRDB.searchDTRs(query);
+        
+        res.json({
+            success: true,
+            data: searchResults,
+            message: searchResults.length > 0 ? 'Search results found' : 'No results found'
+        });
+        
+    } catch (error) {
+        console.error('searchDTRs: Error searching DTRs:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to search DTRs',
+            error: error.message
+        });
+    }
+};
+

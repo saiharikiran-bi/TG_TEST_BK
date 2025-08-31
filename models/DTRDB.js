@@ -1938,6 +1938,101 @@ class DTRDB {
             throw error;
         }
     }
+
+    static async searchDTRs(searchQuery) {
+        try {
+            // Search in DTRs by number, name, and related information
+            const results = await prisma.dtrs.findMany({
+                where: {
+                    OR: [
+                        // Search by DTR number
+                        {
+                            dtrNumber: {
+                                contains: searchQuery,
+                                mode: 'insensitive'
+                            }
+                        },
+                        // Search by DTR serial number
+                        {
+                            serialNumber: {
+                                contains: searchQuery,
+                                mode: 'insensitive'
+                            }
+                        },
+                        // Search by location name
+                        {
+                            locations: {
+                                name: {
+                                    contains: searchQuery,
+                                    mode: 'insensitive'
+                                }
+                            }
+                        },
+                        // Search by associated meters
+                        {
+                            meters: {
+                                some: {
+                                    OR: [
+                                        {
+                                            meterNumber: {
+                                                contains: searchQuery,
+                                                mode: 'insensitive'
+                                            }
+                                        },
+                                        {
+                                            serialNumber: {
+                                                contains: searchQuery,
+                                                mode: 'insensitive'
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    ]
+                },
+                include: {
+                    locations: {
+                        select: {
+                            id: true,
+                            name: true
+                        }
+                    },
+                    meters: {
+                        select: {
+                            id: true,
+                            meterNumber: true,
+                            serialNumber: true,
+                            type: true
+                        },
+                        take: 1 // Just get one meter for display
+                    }
+                },
+                take: 10 // Limit results for performance
+            });
+
+            // Transform results for consistent response format
+            const transformedResults = results.map(dtr => ({
+                id: dtr.id,
+                dtrNumber: dtr.dtrNumber,
+                serialNumber: dtr.serialNumber,
+                location: dtr.locations?.name || 'Unknown Location',
+                locationId: dtr.locations?.id,
+                meter: dtr.meters?.[0] ? {
+                    meterNumber: dtr.meters[0].meterNumber,
+                    serialNumber: dtr.meters[0].serialNumber,
+                    type: dtr.meters[0].type
+                } : null,
+                type: 'dtr'
+            }));
+
+            return transformedResults;
+            
+        } catch (error) {
+            console.error('Error searching DTRs:', error);
+            throw error;
+        }
+    }
 }
 
 export default DTRDB; 
