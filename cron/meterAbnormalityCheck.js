@@ -83,10 +83,10 @@ const sendLevelNotification = async (notification, phoneNumbers, levelName) => {
                     phone,
                     process.env.MSG_TEMPLATE_ID,
                     {
-                        var: notification.dtrnumber,
-                        var1: notification.meternumber,
-                        var2: `${levelName}: ${notification.abnormalitytype || 'Unknown Abnormality'}`,
-                        var3: new Date().toLocaleString()
+                        var: notification.dtrnumber,           // ##var## -> DTR number (e.g., DTR-002)
+                        var1: notification.meternumber,       // ##var1## -> Meter number (e.g., 23010587) - using as feeder name
+                        var2: notification.abnormalitytype,   // ##var2## -> Abnormality Values (e.g., HT Fuse Blown (R - Phase))
+                        var3: new Date().toLocaleString()     // ##var3## -> Occurred at (timestamp)
                     }
                 );
             } catch (smsError) {
@@ -186,10 +186,10 @@ export async function checkMeterAbnormalities() {
                     // Format power data for alerts (like TGNPDCL_Backend)
                     const powerData = formatPowerDataForAlerts(latestReading);
                     
-                    // Generate error signature to prevent duplicate alerts (like TGNPDCL_Backend)
+                    // Generate error signature based on actual meter reading VALUES
                     const errorSignature = generateErrorSignature(abnormalities, powerData);
                     
-                    // Check if this error state has already been alerted
+                    // Check if this exact reading state has already been alerted
                     const previousSignature = previousErrorStates.get(meter.serialNumber);
                     
                     if (previousSignature !== errorSignature) {
@@ -210,7 +210,7 @@ export async function checkMeterAbnormalities() {
                                 const phoneNumbers = getAllEscalationPhoneNumbers();
                                 
                                 if (phoneNumbers && phoneNumbers.length > 0) {
-                                    // Create notification records for each specific abnormality
+                                    // Create notification records for each abnormality type
                                     const notificationPromises = [];
                                     
                                     // Get individual abnormalities
@@ -296,12 +296,15 @@ export async function checkMeterAbnormalities() {
                             // Update the error state signature
                             previousErrorStates.set(meter.serialNumber, errorSignature);
                             
+                            console.log(`✅ [CRON-METER] Escalation notifications handled for meter ${meter.meterNumber}`);
                             alertsSent++;
                         } catch (alertError) {
                             console.error(`❌ [CRON-METER] Failed to handle escalation notifications for meter ${meter.meterNumber}:`, alertError);
                         }
                     } else {
+                        console.log(`⏭️ [CRON-METER] Skipping - all abnormalities are duplicates for meter ${meter.meterNumber}`);
                     }
+                    
                 } else {
                     // Clear previous error state if no abnormalities detected (like TGNPDCL_Backend)
                     if (previousErrorStates.has(meter.serialNumber)) {
