@@ -379,6 +379,7 @@ export const getConsolidatedDTRStats = async (req, res) => {
         
         // Pass locationId to DTRDB method (null = all data, locationId = filtered data)
         const stats = await DTRDB.getConsolidatedDTRStats(locationIdForFilter);
+        console.log(stats);
         
         res.json({
             success: true,
