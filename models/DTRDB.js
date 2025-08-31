@@ -28,7 +28,16 @@ class DTRDB {
             prisma.dtrs.findMany({
                 where,
                 include: {
-                    locations: true
+                    locations: {
+                        include: {
+                            location_types: {
+                                select: {
+                                    name: true,
+                                    level: true
+                                }
+                            }
+                        }
+                    }
                 },
                 skip,
                 take: pageSize,
@@ -115,13 +124,39 @@ class DTRDB {
             throw new Error('DTR ID is required');
         }
 
-        // Try to find DTR by ID (both as integer and string)
+        // If the input looks like a partial DTR number (e.g., "002", "201"), 
+        // prioritize string-based searches over numeric ID searches
+        if (dtrId && typeof dtrId === 'string' && dtrId.length <= 5) {
+            // Try to find by exact dtrNumber match first
+            let dtr = await prisma.dtrs.findFirst({
+                where: { dtrNumber: dtrId }
+            });
+            if (dtr) {
+                return dtr;
+            }
+
+            // Try to find by dtrNumber ending with the provided value
+            dtr = await prisma.dtrs.findFirst({
+                where: {
+                    dtrNumber: {
+                        endsWith: dtrId.toString()
+                    }
+                }
+            });
+            if (dtr) {
+                return dtr;
+            }
+        }
+
+        // Try to find DTR by ID (both as integer and string) - only for longer inputs
         const parsedId = parseInt(dtrId);
         if (!isNaN(parsedId) && parsedId > 0) {
             let dtr = await prisma.dtrs.findUnique({
                 where: { id: parsedId }
             });
-            if (dtr) return dtr;
+            if (dtr) {
+                return dtr;
+            }
         }
 
         // If not found by parsed integer, try by dtrNumber
@@ -132,7 +167,22 @@ class DTRDB {
             if (dtr) return dtr;
         }
 
-        // If still not found, try to find by partial dtrNumber match
+        // If still not found, try to find by dtrNumber ending with the provided value
+        // This handles cases where frontend sends "002" but DB stores "DTR-002"
+        if (dtrId && typeof dtrId === 'string') {
+            let dtr = await prisma.dtrs.findFirst({
+                where: {
+                    dtrNumber: {
+                        endsWith: dtrId.toString()
+                    }
+                }
+            });
+            if (dtr) {
+                return dtr;
+            }
+        }
+
+        // If still not found, try to find by partial dtrNumber match (most specific)
         // This handles cases where frontend sends "201" but DB stores "DTR-201"
         if (dtrId && typeof dtrId === 'string') {
             let dtr = await prisma.dtrs.findFirst({
@@ -142,20 +192,9 @@ class DTRDB {
                     }
                 }
             });
-            if (dtr) return dtr;
-        }
-
-        // If still not found, try to find by dtrNumber ending with the provided value
-        // This handles cases where frontend sends "201" but DB stores "DTR-201"
-        if (dtrId && typeof dtrId === 'string') {
-            let dtr = await prisma.dtrs.findFirst({
-                where: {
-                    dtrNumber: {
-                        endsWith: dtrId.toString()
-                    }
-                }
-            });
-            if (dtr) return dtr;
+            if (dtr) {
+                return dtr;
+            }
         }
 
         throw new Error(`DTR not found with ID or number: ${dtrId}`);
@@ -181,11 +220,50 @@ class DTRDB {
             });
 
             const locationIds = [...new Set(feedersRaw.map(f => f.locationId))];
-            const locations = await prisma.locations.findMany({
-                where: { id: { in: locationIds } },
-                select: { id: true, name: true, code: true, latitude: true, longitude: true }
-            });
-            const locationMap = Object.fromEntries(locations.map(loc => [loc.id, loc]));
+            
+            // Fetch complete location hierarchy for each location
+            const locationsWithHierarchy = await Promise.all(
+                locationIds.map(async (locationId) => {
+                    if (!locationId) return null;
+                    
+                    // Get the location and its complete hierarchy
+                    const location = await prisma.locations.findUnique({
+                        where: { id: locationId },
+                        select: {
+                            id: true,
+                            name: true,
+                            code: true,
+                            latitude: true,
+                            longitude: true,
+                            address: true,
+                            locationTypeId: true,
+                            parentId: true,
+                            location_types: {
+                                select: {
+                                    name: true,
+                                    level: true
+                                }
+                            }
+                        }
+                    });
+                    
+                    if (!location) return null;
+                    
+                    // Build the complete hierarchy path
+                    const hierarchy = await DTRDB.buildLocationHierarchy(locationId);
+                    
+                    return {
+                        ...location,
+                        hierarchy
+                    };
+                })
+            );
+            
+            const locationMap = Object.fromEntries(
+                locationsWithHierarchy
+                    .filter(Boolean)
+                    .map(loc => [loc.id, loc])
+            );
 
             const feeders = feedersRaw.map(f => ({
                 ...f,
@@ -224,7 +302,7 @@ class DTRDB {
                     lastCommunication = localDate.toISOString();
                 }
             }
-            
+
             return {
                 dtr: {
                     id: dtr.id,
@@ -299,8 +377,12 @@ class DTRDB {
             
             // If locationId is provided, filter by location
             if (locationId) {
-                where.dtrs = {
+                whereClause = {
+                    meters: {
+                        dtrs: {
                     locationId: locationId
+                        }
+                    }
                 };
             }
 
@@ -359,11 +441,20 @@ class DTRDB {
                 (r.currentR === 0 || r.currentY === 0 || r.currentB === 0)
             ).length;
 
-            const htFuseBlown = readingsArr.filter(r =>
-                (r.voltageR !== null && r.voltageR < 180) ||
+            // Count HT Fuse Blown as incidents per meter, not per reading
+            const htFuseBlownMeters = new Set();
+            readingsArr.forEach(r => {
+                if ((r.voltageR !== null && r.voltageR < 180) ||
                 (r.voltageY !== null && r.voltageY < 180) ||
-                (r.voltageB !== null && r.voltageB < 180)
-            ).length;
+                    (r.voltageB !== null && r.voltageB < 180)) {
+                    // Get the meter ID for this reading
+                    const meterId = r.meterId;
+                    if (meterId) {
+                        htFuseBlownMeters.add(meterId);
+                    }
+                }
+            });
+            const htFuseBlown = htFuseBlownMeters.size;
 
             const totalFuseBlown = ltFuseBlown + htFuseBlown;
 
@@ -500,17 +591,25 @@ class DTRDB {
                 )
             );
             const readingsArr = latestReadings.filter(Boolean);
-
             // Calculate fuse blown stats
             const ltFuseBlown = readingsArr.filter(r =>
                 (r.currentR === 0 || r.currentY === 0 || r.currentB === 0)
             ).length;
 
-            const htFuseBlown = readingsArr.filter(r =>
-                (r.voltageR !== null && r.voltageR < 180) ||
+            // Count HT Fuse Blown as incidents per meter, not per reading
+            const htFuseBlownMeters = new Set();
+            readingsArr.forEach(r => {
+                if ((r.voltageR !== null && r.voltageR < 180) ||
                 (r.voltageY !== null && r.voltageY < 180) ||
-                (r.voltageB !== null && r.voltageB < 180)
-            ).length;
+                    (r.voltageB !== null && r.voltageB < 180)) {
+                    // Get the meter ID for this reading
+                    const meterId = r.meterId;
+                    if (meterId) {
+                        htFuseBlownMeters.add(meterId);
+                    }
+                }
+            });
+            const htFuseBlown = htFuseBlownMeters.size;
 
             const totalFuseBlown = ltFuseBlown + htFuseBlown;
 
@@ -632,12 +731,66 @@ class DTRDB {
             );
             const readingsArr = latestReadings.filter(Boolean);
 
+            // Calculate consumption using (last reading - first reading) method for kWh and kVAh
             let totalKW = 0, totalKVA = 0, totalKWh = 0, totalKVAh = 0;
-            for (const r of readingsArr) {
-                totalKW += r.kW || 0;
-                totalKVA += r.kVA || 0;
-                totalKWh += r.kWh || 0;
-                totalKVAh += r.kVAh || 0;
+            
+            if (meterIds.length > 0) {
+                // Get all readings for consumption calculation
+                const allReadings = await prisma.meter_readings.findMany({
+                    where: {
+                        meterId: { in: meterIds }
+                    },
+                    select: {
+                        meterId: true,
+                        readingDate: true,
+                        kWh: true,
+                        kVAh: true,
+                        kW: true,
+                        kVA: true
+                    },
+                    orderBy: [
+                        { meterId: 'asc' },
+                        { readingDate: 'asc' }
+                    ]
+                });
+
+                // Group readings by meter for consumption calculation
+                const meterReadings = {};
+                allReadings.forEach(reading => {
+                    if (!meterReadings[reading.meterId]) {
+                        meterReadings[reading.meterId] = [];
+                    }
+                    meterReadings[reading.meterId].push(reading);
+                });
+
+                // Calculate consumption for each meter: last reading - first reading
+                Object.values(meterReadings).forEach(meterDayReadings => {
+                    if (meterDayReadings.length > 1) {
+                        // Sort by reading time to get first and last
+                        meterDayReadings.sort((a, b) => new Date(a.readingDate) - new Date(b.readingDate));
+                        
+                        const firstReading = meterDayReadings[0];
+                        const lastReading = meterDayReadings[meterDayReadings.length - 1];
+                        
+                        // Calculate consumption: last - first for each metric
+                        const meterKwh = (lastReading.kWh || 0) - (firstReading.kWh || 0);
+                        const meterKvah = (lastReading.kVAh || 0) - (firstReading.kVAh || 0);
+                        
+                        // Only add positive consumption values
+                        if (meterKwh >= 0) {
+                            totalKWh += meterKwh;
+                        }
+                        if (meterKvah >= 0) {
+                            totalKVAh += meterKvah;
+                        }
+                    }
+                });
+
+                // For kW and kVA: Use simple aggregation (sum of latest readings)
+                for (const r of readingsArr) {
+                    totalKW += r.kW || 0;
+                    totalKVA += r.kVA || 0;
+                }
             }
 
           
@@ -875,11 +1028,11 @@ class DTRDB {
                     select: {
                         meterId: true,
                         readingDate: true,
-                        kWh: true,
-                        kVAh: true,
-                        kW: true,
-                        kVA: true
-                    },
+                    kWh: true,
+                    kVAh: true,
+                    kW: true,
+                    kVA: true
+                },
                     orderBy: {
                         readingDate: 'asc'
                     }
@@ -1458,13 +1611,12 @@ class DTRDB {
                 }
             };
 
-            const result = await prisma.meter_readings.groupBy({
-                by: ['readingDate'],
+                // Get all readings for the date range
+                const allReadings = await prisma.meter_readings.findMany({
                 where: whereClause,
-                _count: {
-                    id: true
-                },
-                _sum: {
+                    select: {
+                        meterId: true,
+                        readingDate: true,
                     kVA: true
                 },
                 orderBy: {
@@ -1472,10 +1624,12 @@ class DTRDB {
                 }
             });
 
-            // Group by month
+                // Group readings by month and sum KVA values for each month
             const monthlyData = {};
-            result.forEach(item => {
-                const monthKey = getDateInYMDFormat(item.readingDate).slice(0, 7); // YYYY-MM format
+                
+                allReadings.forEach(reading => {
+                    const monthKey = getDateInYMDFormat(reading.readingDate).slice(0, 7); // YYYY-MM format
+                    
                 if (!monthlyData[monthKey]) {
                     monthlyData[monthKey] = {
                         kva_date: monthKey,
@@ -1483,14 +1637,69 @@ class DTRDB {
                         total_kva: 0
                     };
                 }
-                monthlyData[monthKey].count += item._count.id;
-                monthlyData[monthKey].total_kva += item._sum.kVA || 0;
+                    
+                    monthlyData[monthKey].count += 1;
+                    monthlyData[monthKey].total_kva += reading.kVA || 0;
             });
 
             return Object.values(monthlyData).sort((a, b) => a.kva_date.localeCompare(b.kva_date));
         } catch (error) {
             console.error('Error fetching DTR kVA metrics:', error);
             throw error;
+        }
+    }
+
+    // Helper method to build complete location hierarchy
+    static async buildLocationHierarchy(locationId) {
+        try {
+            const hierarchy = [];
+            let currentLocationId = locationId;
+            
+            while (currentLocationId) {
+                const location = await prisma.locations.findUnique({
+                    where: { id: currentLocationId },
+                    select: {
+                        id: true,
+                        name: true,
+                        code: true,
+                        locationTypeId: true,
+                        parentId: true,
+                        location_types: {
+                            select: {
+                                name: true,
+                                level: true
+                            }
+                        }
+                    }
+                });
+                
+                if (!location) break;
+                
+                // Normalize type names to match frontend expectations
+                let normalizedType = location.location_types.name;
+                
+                // Map backend type names to frontend expected names
+                if (normalizedType === 'Sub division') {
+                    normalizedType = 'Sub-Division';
+                } else if (normalizedType === 'DTR Location') {
+                    normalizedType = 'Feeder';
+                }
+                
+                hierarchy.unshift({
+                    id: location.id,
+                    name: location.name,
+                    code: location.code,
+                    type: normalizedType,
+                    level: location.location_types.level
+                });
+                
+                currentLocationId = location.parentId;
+            }
+            
+            return hierarchy;
+        } catch (error) {
+            console.error('Error building location hierarchy:', error);
+            return [];
         }
     }
 
