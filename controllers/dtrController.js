@@ -168,7 +168,7 @@ export const getDTRAlerts = async (req, res) => {
         // Only pass locationId if it's not null/undefined (null = show all data)
         const locationIdForFilter = userLocationId || null;
         
-        // Get alerts from escalation_notifications table (same as DTRDetail and Feeders pages)
+        // Get alerts from escalation_notifications table with more specific alert information
         const alerts = await prisma.escalation_notifications.findMany({
             where: locationIdForFilter ? {
                 meters: {
@@ -185,6 +185,7 @@ export const getDTRAlerts = async (req, res) => {
                 status: true,
                 dtrnumber: true,
                 meternumber: true,
+                message: true, // Include message field for more details
                 meters: {
                     select: {
                         meterNumber: true,
@@ -206,17 +207,52 @@ export const getDTRAlerts = async (req, res) => {
             take: 10 // Limit to latest 10 alerts for dashboard
         });
         
-
-        
         // Map alerts to match frontend table columns exactly
-        const mappedAlerts = alerts.map(alert => ({
-            alertId: alert.id || 'NA',
-            type: alert.abnormalitytype || alert.type || 'NA', // Prioritize abnormalitytype for actual alert names
-            feederName: alert.meternumber || alert.meters?.meterNumber || alert.meters?.serialNumber || 'N/A',
-            occuredOn: alert.createdat ? new Date(alert.createdat).toLocaleString() : 'NA',
-            status: alert.status || 'NA',
-            dtrNumber: alert.dtrnumber || alert.meters?.dtrs?.dtrNumber || 'N/A'
-        }));
+        const mappedAlerts = alerts.map(alert => {
+            // Extract specific alert type from abnormalitytype, type, or message
+            let alertType = 'NA';
+            
+            if (alert.abnormalitytype) {
+                // Use abnormalitytype if available (most specific)
+                alertType = alert.abnormalitytype;
+            } else if (alert.type) {
+                // Use type if available
+                alertType = alert.type;
+            } else if (alert.message) {
+                // Extract from message if available
+                alertType = alert.message;
+            }
+            
+            // Clean up the alert type to show only the main issue
+            if (alertType && alertType.includes(',')) {
+                // If multiple issues, show only the first one
+                alertType = alertType.split(',')[0].trim();
+            }
+            
+            // Further clean up common alert patterns but preserve the actual alert type
+            if (alertType) {
+                // Clean up the text but keep the meaningful alert type
+                alertType = alertType
+                    .replace(/^HT\s+Fuse\s+Blown\s*\([^)]+\)/i, 'HT Fuse Blown') // Simplify "HT Fuse Blown (R - Phase)"
+                    .replace(/^\s+|\s+$/g, '') // Trim whitespace
+                    .replace(/^,\s*/, '') // Remove leading comma
+                    .replace(/,\s*$/, ''); // Remove trailing comma
+                
+                // If we ended up with empty string after cleaning, use a fallback
+                if (!alertType || alertType.trim() === '') {
+                    alertType = 'Abnormality Detected';
+                }
+            }
+            
+            return {
+                alertId: alert.id || 'NA',
+                type: alertType,
+                feederName: alert.meternumber || alert.meters?.meterNumber || alert.meters?.serialNumber || 'N/A',
+                occuredOn: alert.createdat ? new Date(alert.createdat).toLocaleString() : 'NA',
+                status: alert.status || 'NA',
+                dtrNumber: alert.dtrnumber || alert.meters?.dtrs?.dtrNumber || 'N/A'
+            };
+        });
 
         res.json({
             success: true,
@@ -379,7 +415,6 @@ export const getConsolidatedDTRStats = async (req, res) => {
         
         // Pass locationId to DTRDB method (null = all data, locationId = filtered data)
         const stats = await DTRDB.getConsolidatedDTRStats(locationIdForFilter);
-        console.log(stats);
         
         res.json({
             success: true,
@@ -718,6 +753,132 @@ export const getAllMetersData = async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Failed to fetch all meters data',
+            error: error.message
+        });
+    }
+};
+
+export const getFuseBlownMeters = async (req, res) => {
+    try {
+        const { page, pageSize, search, locationId } = req.query;
+        
+        // Get user's location from req.user (populated by middleware)
+        const userLocationId = req.user?.locationId;
+        
+        // If user has a specific location, use it; otherwise use query locationId or undefined
+        const effectiveLocationId = userLocationId || (locationId ? parseInt(locationId) : undefined);
+        
+        const result = await DTRDB.getFuseBlownMeters({
+            page: page ? parseInt(page) : 1,
+            pageSize: pageSize ? parseInt(pageSize) : 20,
+            search: search || '',
+            locationId: effectiveLocationId
+        });
+
+        res.json({
+            success: true,
+            data: result.data,
+            pagination: {
+                currentPage: result.page,
+                totalPages: result.totalPages,
+                totalCount: result.total,
+                limit: result.pageSize,
+                hasNextPage: result.page < result.totalPages,
+                hasPrevPage: result.page > 1
+            },
+            message: 'Fuse blown meters fetched successfully',
+            userLocation: userLocationId,
+            filteredByLocation: !!userLocationId
+        });
+    } catch (error) {
+        console.error('Error fetching fuse blown meters:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch fuse blown meters',
+            error: error.message
+        });
+    }
+};
+
+export const getOverloadedDTRs = async (req, res) => {
+    try {
+        const { page, pageSize, search, locationId } = req.query;
+        
+        // Get user's location from req.user (populated by middleware)
+        const userLocationId = req.user?.locationId;
+        
+        // If user has a specific location, use it; otherwise use query locationId or undefined
+        const effectiveLocationId = userLocationId || (locationId ? parseInt(locationId) : undefined);
+        
+        const result = await DTRDB.getOverloadedDTRs({
+            page: page ? parseInt(page) : 1,
+            pageSize: pageSize ? parseInt(pageSize) : 20,
+            search: search || '',
+            locationId: effectiveLocationId
+        });
+
+        res.json({
+            success: true,
+            data: result.data,
+            pagination: {
+                currentPage: result.page,
+                totalPages: result.totalPages,
+                totalCount: result.total,
+                limit: result.pageSize,
+                hasNextPage: result.page < result.totalPages,
+                hasPrevPage: result.page > 1
+            },
+            message: 'Overloaded DTRs fetched successfully',
+            userLocation: userLocationId,
+            filteredByLocation: !!userLocationId
+        });
+    } catch (error) {
+        console.error('Error fetching overloaded DTRs:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch overloaded DTRs',
+            error: error.message
+        });
+    }
+};
+
+export const getUnderloadedDTRs = async (req, res) => {
+    try {
+        const { page, pageSize, search, locationId } = req.query;
+        
+        // Get user's location from req.user (populated by middleware)
+        const userLocationId = req.user?.locationId;
+        
+        // If user has a specific location, use it; otherwise use query locationId or undefined
+        const effectiveLocationId = userLocationId || (locationId ? parseInt(locationId) : undefined);
+        
+        const result = await DTRDB.getUnderloadedDTRs({
+            page: page ? parseInt(page) : 1,
+            pageSize: pageSize ? parseInt(pageSize) : 20,
+            search: search || '',
+            locationId: effectiveLocationId
+        });
+
+        res.json({
+            success: true,
+            data: result.data,
+            pagination: {
+                currentPage: result.page,
+                totalPages: result.totalPages,
+                totalCount: result.total,
+                limit: result.pageSize,
+                hasNextPage: result.page < result.totalPages,
+                hasPrevPage: result.page > 1
+            },
+            message: 'Underloaded DTRs fetched successfully',
+            userLocation: userLocationId,
+            filteredByLocation: !!userLocationId
+        });
+    } catch (error) {
+        console.error('Error fetching underloaded DTRs:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch underloaded DTRs',
             error: error.message
         });
     }
