@@ -25,7 +25,7 @@ class MeterDB {
                     },
                     meter_readings: {
                         orderBy: { readingDate: 'desc' },
-                        take: 1
+                        take: 10
                     }
                 },
                 orderBy: { createdAt: 'desc' }
@@ -37,25 +37,11 @@ class MeterDB {
         }
     }
 
-    static async findById(id) {
+    static async findByMeterNumber(meterNumber) {
         try {
             const meter = await prisma.meters.findUnique({
-                where: { id: parseInt(id) },
+                where: {meterNumber: meterNumber }, // Search by meterNumber instead of ID
                 include: {
-                    consumers: {
-                        select: {
-                            id: true,
-                            consumerNumber: true,
-                            name: true,
-                            email: true,
-                            primaryPhone: true,
-                            alternatePhone: true,
-                            connectionType: true,
-                            category: true,
-                            sanctionedLoad: true,
-                            connectionDate: true
-                        }
-                    },
                     locations: {
                         select: {
                             id: true,
@@ -76,13 +62,31 @@ class MeterDB {
                             type: true
                         }
                     },
-                    current_transformers: true,
-                    potential_transformers: true
+                    bills: {
+                        include: {
+                            consumers: {
+                                select: {
+                                    id: true,
+                                    name: true,
+                                    consumerNumber: true
+                                }
+                            }
+                        },
+                        take: 1,
+                        orderBy: { createdAt: 'desc' }
+                    },
+                    // Skip transformers for now due to schema issues
+                    // current_transformers: true,
+                    // potential_transformers: true,
+                    meter_readings: {
+                        orderBy: { readingDate: 'desc' },
+                        take: 10
+                    }
                 }
             });
             return meter;
         } catch (error) {
-            console.error('Error finding meter by ID:', error);
+            console.error('Error finding meter by meter number:', error);
             throw error;
         }
     }
@@ -179,17 +183,18 @@ class MeterDB {
                 by: ['type'],
                 _count: { type: true }
             });
-            const connectionTypes = await prisma.meters.findMany({
-                select: {
-                    consumers: {
-                        select: { connectionType: true }
-                    }
-                }
+            
+            // Get connection types from meter types since we don't have bills table
+            const connectionTypes = await prisma.meters.groupBy({
+                by: ['type'],
+                _count: { type: true }
             });
+            
             const connTypeCounts = {};
-            connectionTypes.forEach(m => {
-                const ct = m.consumer?.connectionType;
-                if (ct) connTypeCounts[ct] = (connTypeCounts[ct] || 0) + 1;
+            connectionTypes.forEach(ct => {
+                if (ct.type) {
+                    connTypeCounts[ct.type] = ct._count.type;
+                }
             });
 
             return {
@@ -210,11 +215,6 @@ class MeterDB {
                 where: { id: parseInt(meterId) },
                 include: {
                     meter_configurations: true,
-                    consumers: {
-                        include: {
-                            locations: true
-                        }
-                    },
                     locations: true,
                     dtrs: true,
                     meter_readings: {
@@ -250,11 +250,6 @@ class MeterDB {
             if (filters.status) {
                 whereClause.status = filters.status;
             }
-            if (filters.consumerNumber) {
-                whereClause.consumers = {
-                    consumerNumber: { contains: filters.consumerNumber, mode: 'insensitive' }
-                };
-            }
             if (filters.location) {
                 whereClause.locations = {
                     name: { contains: filters.location, mode: 'insensitive' }
@@ -265,6 +260,17 @@ class MeterDB {
             const meters = await prisma.meters.findMany({
                 where: whereClause,
                 include: {
+                    bills: {
+                        include: {
+                            consumers: {
+                                select: {
+                                    name: true
+                                }
+                            }
+                        },
+                        take: 1,
+                        orderBy: { createdAt: 'desc' }
+                    },
                     locations: {
                         select: {
                             name: true,
@@ -292,7 +298,7 @@ class MeterDB {
             };
             return result;
         } catch (error) {
-            console.error(' MeterDB.getMetersTable: Database error:', error);
+            console.error(' MeterDB.getMeterStats: Database error:', error);
             throw error;
         }
     }
@@ -316,14 +322,19 @@ class MeterDB {
                             type: true,
                             status: true,
                             installationDate: true,
-                            consumers: {
-                                select: {
-                                    id: true,
-                                    consumerNumber: true,
-                                    name: true,
-                                    primaryPhone: true,
-                                    email: true
-                                }
+                            bills: {
+                                include: {
+                                    consumers: {
+                                        select: {
+                                            consumerNumber: true,
+                                            name: true,
+                                            primaryPhone: true,
+                                            email: true
+                                        }
+                                    }
+                                },
+                                take: 1,
+                                orderBy: { createdAt: 'desc' }
                             },
                             locations: {
                                 select: {
@@ -351,12 +362,16 @@ class MeterDB {
             const meter = await prisma.meters.findUnique({
                 where: { id: parseInt(meterId) },
                 include: {
-                    consumers: {
-                        select: {
-                            id: true,
-                            name: true,
-                            consumerNumber: true
-                        }
+                    bills: {
+                        include: {
+                            consumers: {
+                                select: {
+                                    name: true
+                                }
+                            }
+                        },
+                        take: 1,
+                        orderBy: { createdAt: 'desc' }
                     },
                     locations: {
                         select: {
@@ -382,7 +397,6 @@ class MeterDB {
                 type: meter.type,
                 status: meter.status,
                 installationDate: meter.installationDate,
-                consumer: meter.consumer,
                 location: meter.location,
                 modem: meter.modem
             };
@@ -393,4 +407,4 @@ class MeterDB {
     }
 }
 
-export default MeterDB; 
+export default MeterDB;
