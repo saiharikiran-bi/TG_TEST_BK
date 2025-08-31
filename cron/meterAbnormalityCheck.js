@@ -1,0 +1,302 @@
+import { PrismaClient } from '@prisma/client';
+import { 
+    analyzeMeterReadings, 
+    hasAbnormalities, 
+    getAbnormalitySummary, 
+    formatPowerDataForAlerts,
+    convertToISTMail,
+    generateErrorSignature
+} from '../utils/abnormalityUtils.js';
+import EmailService from '../utils/emailService.js';
+
+const prisma = new PrismaClient();
+
+// Store previous error states to prevent duplicate alerts (like TGNPDCL_Backend)
+const previousErrorStates = new Map();
+
+/**
+ * Check meter readings for abnormalities and send alerts directly
+ * This cron job runs every minute to monitor all meters
+ * EXACTLY like TGNPDCL_Backend implementation
+ */
+export async function checkMeterAbnormalities() {
+    try {
+        console.log('🔍 [CRON-METER] Starting meter abnormality check...');
+        console.log('⏰ [CRON-METER] Timestamp:', new Date().toISOString());
+
+        // Get all active meters with their latest readings (like TGNPDCL_Backend)
+        const meters = await prisma.meters.findMany({
+            where: {
+                status: 'ACTIVE',
+                isInUse: true
+            },
+            include: {
+                locations: {
+                    include: {
+                        dtrs: {
+                            select: {
+                                dtrNumber: true
+                            }
+                        }
+                    }
+                },
+                dtrs: {
+                    select: {
+                        dtrNumber: true
+                    }
+                },
+                meter_readings: {
+                    orderBy: {
+                        readingDate: 'desc'
+                    },
+                    take: 1
+                }
+            }
+        });
+
+        console.log(`📊 [CRON-METER] Found ${meters.length} active meters to check`);
+
+        let totalAbnormalities = 0;
+        let alertsSent = 0;
+
+        for (const meter of meters) {
+            try {
+                if (!meter.meter_readings || meter.meter_readings.length === 0) {
+                    console.log(`⚠️ [CRON-METER] No readings found for meter ${meter.meterNumber}`);
+                    continue;
+                }
+
+                const latestReading = meter.meter_readings[0];
+                
+                // Debug: Log the meter data structure
+                console.log(`🔍 [DEBUG] Meter ${meter.meterNumber} data:`, {
+                    meterId: meter.id,
+                    dtrId: meter.dtrId,
+                    dtrs: meter.dtrs,
+                    locations: meter.locations,
+                    locationDtrs: meter.locations?.dtrs
+                });
+                
+                // Try to get DTR number from the meter's DTR relationship
+                let dtrNumber = meter.dtrs?.dtrNumber;
+                
+                // If no DTR found, try to get it from the location's DTRs
+                if (!dtrNumber && meter.locations?.dtrs && meter.locations.dtrs.length > 0) {
+                    dtrNumber = meter.locations.dtrs[0]?.dtrNumber;
+                }
+                
+                // If still no DTR, try to get it from the meter's dtrId field
+                if (!dtrNumber && meter.dtrId) {
+                    dtrNumber = `DTR-${meter.dtrId}`;
+                }
+                
+                // Final fallback
+                dtrNumber = dtrNumber || 'Unknown DTR';
+                
+                const meterNumber = meter.meterNumber || 'Unknown Meter';
+                
+                // Debug: Log the extracted values
+                console.log(`🔍 [DEBUG] Extracted values for meter ${meter.meterNumber}:`, {
+                    dtrNumber,
+                    meterNumber
+                });
+
+                // Analyze the reading for abnormalities (like TGNPDCL_Backend)
+                const abnormalities = analyzeMeterReadings(latestReading);
+                const hasAbnormalitiesDetected = hasAbnormalities(abnormalities);
+
+                if (hasAbnormalitiesDetected) {
+                    totalAbnormalities++;
+                    console.log(`🚨 [CRON-METER] Abnormalities detected for meter ${meter.meterNumber}:`, getAbnormalitySummary(abnormalities));
+
+                    // Format power data for alerts (like TGNPDCL_Backend)
+                    const powerData = formatPowerDataForAlerts(latestReading);
+                    
+                    // Generate error signature to prevent duplicate alerts (like TGNPDCL_Backend)
+                    const errorSignature = generateErrorSignature(abnormalities, powerData);
+                    
+                    // Check if this error state has already been alerted
+                    const previousSignature = previousErrorStates.get(meter.serialNumber);
+                    
+                    if (previousSignature !== errorSignature) {
+                        try {
+                            // Send zero value alert directly (like TGNPDCL_Backend)
+                            // This covers all abnormalities - no separate notification routes needed
+                            await EmailService.sendZeroValueAlert(
+                                meter.serialNumber,
+                                meterNumber,
+                                dtrNumber,
+                                abnormalities,
+                                powerData,
+                                convertToISTMail(latestReading.readingDate)
+                            );
+
+                            // Update the error state signature
+                            previousErrorStates.set(meter.serialNumber, errorSignature);
+                            
+                            alertsSent++;
+                            console.log(`✅ [CRON-METER] Alert sent for meter ${meter.meterNumber}`);
+                        } catch (alertError) {
+                            console.error(`❌ [CRON-METER] Failed to send alert for meter ${meter.meterNumber}:`, alertError);
+                        }
+                    } else {
+                        console.log(`⏭️ [CRON-METER] Skipping duplicate alert for meter ${meter.meterNumber}`);
+                    }
+                } else {
+                    // Clear previous error state if no abnormalities detected (like TGNPDCL_Backend)
+                    if (previousErrorStates.has(meter.serialNumber)) {
+                        previousErrorStates.delete(meter.serialNumber);
+                        console.log(`🔄 [CRON-METER] Cleared error state for meter ${meter.serialNumber} - no abnormalities detected`);
+                    }
+                }
+
+            } catch (error) {
+                console.error(`❌ [CRON-METER] Error processing meter ${meter.meterNumber}:`, error);
+            }
+        }
+
+        console.log(`✅ [CRON-METER] Meter abnormality check completed`);
+        console.log(`📊 [CRON-METER] Summary: ${totalAbnormalities} meters with abnormalities, ${alertsSent} alerts sent`);
+
+        return {
+            totalMeters: meters.length,
+            metersWithAbnormalities: totalAbnormalities,
+            alertsSent: alertsSent,
+            timestamp: new Date().toISOString()
+        };
+
+    } catch (error) {
+        console.error('❌ [CRON-METER] Critical error in meter abnormality check:', error);
+        throw error;
+    }
+}
+
+/**
+ * Get meter readings for a specific meter
+ * @param {number} meterId - The meter ID
+ * @param {number} limit - Number of readings to return
+ * @returns {Array} - Array of meter readings
+ */
+export async function getMeterReadings(meterId, limit = 10) {
+    try {
+        const readings = await prisma.meter_readings.findMany({
+            where: { meterId: parseInt(meterId) },
+            orderBy: { readingDate: 'desc' },
+            take: parseInt(limit)
+        });
+
+        return readings;
+    } catch (error) {
+        console.error('Error fetching meter readings:', error);
+        throw error;
+    }
+}
+
+/**
+ * Get the latest meter reading for a specific meter
+ * @param {number} meterId - The meter ID
+ * @returns {Object|null} - The latest meter reading or null
+ */
+export async function getLatestMeterReading(meterId) {
+    try {
+        const reading = await prisma.meter_readings.findFirst({
+            where: { meterId: parseInt(meterId) },
+            orderBy: { readingDate: 'desc' }
+        });
+
+        return reading;
+    } catch (error) {
+        console.error('Error fetching latest meter reading:', error);
+        throw error;
+    }
+}
+
+/**
+ * Check abnormalities for a specific meter
+ * @param {number} meterId - The meter ID
+ * @returns {Object} - Analysis result for the meter
+ */
+export async function checkSpecificMeterAbnormalities(meterId) {
+    try {
+        const meter = await prisma.meters.findUnique({
+            where: { id: parseInt(meterId) },
+            include: {
+                locations: {
+                    include: {
+                        dtrs: {
+                            select: {
+                                dtrNumber: true
+                            }
+                        }
+                    }
+                },
+                dtrs: {
+                    select: {
+                        dtrNumber: true
+                    }
+                },
+                meter_readings: {
+                    orderBy: {
+                        readingDate: 'desc'
+                    },
+                    take: 1
+                }
+            }
+        });
+
+        if (!meter) {
+            throw new Error('Meter not found');
+        }
+
+        if (!meter.meter_readings || meter.meter_readings.length === 0) {
+            throw new Error('No readings found for this meter');
+        }
+
+        const latestReading = meter.meter_readings[0];
+        
+        // Try to get DTR number from the meter's DTR relationship
+        let dtrName = meter.dtrs?.dtrNumber;
+        
+        // If no DTR found, try to get it from the location's DTRs
+        if (!dtrName && meter.locations?.dtrs && meter.locations.dtrs.length > 0) {
+            dtrName = meter.locations.dtrs[0]?.dtrNumber;
+        }
+        
+        // If still no DTR, try to get it from the meter's dtrId field
+        if (!dtrName && meter.dtrId) {
+            dtrName = `DTR-${meter.dtrId}`;
+        }
+        
+        // Final fallback
+        dtrName = dtrName || 'Unknown DTR';
+        
+        const feederName = meter.locations?.name || 'Unknown Feeder';
+
+        // Analyze the reading for abnormalities
+        const abnormalities = analyzeMeterReadings(latestReading);
+        const hasAbnormalitiesDetected = hasAbnormalities(abnormalities);
+        const powerData = formatPowerDataForAlerts(latestReading);
+
+        return {
+            meterId: parseInt(meterId),
+            meterNumber: meter.meterNumber,
+            serialNumber: meter.serialNumber,
+            dtrName,
+            feederName,
+            readingDate: latestReading.readingDate,
+            abnormalities,
+            hasAbnormalities: hasAbnormalitiesDetected,
+            abnormalitySummary: getAbnormalitySummary(abnormalities),
+            powerData,
+            errorSignature: generateErrorSignature(abnormalities, powerData)
+        };
+
+    } catch (error) {
+        console.error('Error checking specific meter abnormalities:', error);
+        throw error;
+    }
+}
+
+export default {
+    checkMeterAbnormalities
+};

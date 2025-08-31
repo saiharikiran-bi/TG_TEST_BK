@@ -1,0 +1,486 @@
+import DTRDB from '../models/DTRDB.js';
+import { getDateTime, getDateInYMDFormat, getDateInMYFormat, fillMissingDatesDyno } from '../utils/utils.js';
+
+export const getDTRTable = async (req, res) => {
+    try {
+        const { page, pageSize, search, status, locationId } = req.query;
+        
+        // Get user's location from req.user (populated by middleware)
+        const userLocationId = req.user?.locationId;
+        
+        // If user has a specific location, use it; otherwise use query locationId or undefined
+        const effectiveLocationId = userLocationId || (locationId ? parseInt(locationId) : undefined);
+        
+        const result = await DTRDB.getDTRTable({
+            page: page ? parseInt(page) : 1,
+            pageSize: pageSize ? parseInt(pageSize) : 10,
+            search: search || '',
+            status: status || undefined,
+            locationId: effectiveLocationId
+        });
+console.log(result);
+        // Map the data to match frontend table columns exactly
+        const mappedData = result.data.map((dtr, idx) => ({
+            sNo: (result.page - 1) * result.pageSize + idx + 1,
+            dtrId: dtr.dtrNumber || 'NA',
+            dtrName: dtr.serialNumber || 'NA',
+            feedersCount: dtr.feedersCount || 0,
+            streetName: dtr.locations?.address || 'NA',
+            city: dtr.locations?.name || 'NA',
+            commStatus: dtr.status || 'NA',
+            lastCommunication: dtr.lastCommunication ? new Date(dtr.lastCommunication).toLocaleString() : 'NA'
+        }));
+
+        res.json({
+            success: true,
+            data: mappedData,
+            pagination: {
+                currentPage: result.page,
+                totalPages: Math.ceil(result.total / result.pageSize),
+                totalCount: result.total,
+                limit: result.pageSize,
+                hasNextPage: result.page < Math.ceil(result.total / result.pageSize),
+                hasPrevPage: result.page > 1
+            },
+            message: 'DTR table fetched successfully',
+            userLocation: userLocationId,
+            filteredByLocation: !!userLocationId
+        });
+    } catch (error) {
+        console.error('Error fetching DTR table:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch DTR table',
+            error: error.message
+        });
+    }
+};
+
+export const getFeedersForDTR = async (req, res) => {
+    try {
+        const { dtrId } = req.params;
+        const feedersData = await DTRDB.getFeedersForDTR(dtrId);
+        
+        // Map feeders data to match frontend expectations
+        const mappedFeeders = feedersData.feeders.map((feeder, idx) => ({
+            sNo: idx + 1,
+            feederId: feeder.id,
+            meterNumber: feeder.meterNumber || 'NA',
+            serialNumber: feeder.serialNumber || 'NA',
+            manufacturer: feeder.manufacturer || 'NA',
+            model: feeder.model || 'NA',
+            type: feeder.type || 'NA',
+            phase: feeder.phase || 'NA',
+            status: feeder.status || 'NA',
+            location: feeder.location ? feeder.location.name : 'NA',
+            city: feeder.location ? feeder.location.city : 'NA',
+            latitude: feeder.location ? feeder.location.latitude : null,
+            longitude: feeder.location ? feeder.location.longitude : null
+        }));
+
+        const mappedDTR = {
+            dtrId: feedersData.dtr.id,
+            dtrNumber: feedersData.dtr.dtrNumber || 'NA',
+            serialNumber: feedersData.dtr.serialNumber || 'NA',
+            manufacturer: feedersData.dtr.manufacturer || 'NA',
+            model: feedersData.dtr.model || 'NA',
+            capacity: feedersData.dtr.capacity || 0,
+            loadPercentage: feedersData.dtr.loadPercentage || 0,
+            status: feedersData.dtr.status || 'NA'
+        };
+
+        res.json({
+            success: true,
+            data: {
+                dtr: mappedDTR,
+                feeders: mappedFeeders,
+                totalFeeders: mappedFeeders.length
+            },
+            message: 'Feeders fetched successfully'
+        });
+    } catch (error) {
+        console.error('Error fetching feeders for DTR:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch feeders for DTR',
+            error: error.message
+        });
+    }
+};
+
+export const getDTRAlerts = async (req, res) => {
+    try {
+        // Get user's location from req.user (populated by middleware)
+        const userLocationId = req.user?.locationId;
+        
+        // Only pass locationId if it's not null/undefined (null = show all data)
+        const locationIdForFilter = userLocationId || null;
+        
+        
+        
+        // Pass locationId to DTRDB method (null = all data, locationId = filtered data)
+        const alerts = await DTRDB.getDTRAlerts(locationIdForFilter);
+        
+        // Map alerts to match frontend table columns exactly
+        const mappedAlerts = alerts.map(alert => ({
+            alert: alert.faultType || 'NA',
+            date: alert.createdAt ? new Date(alert.createdAt).toLocaleString() : 'NA',
+            status: alert.status || 'NA'
+        }));
+
+        res.json({
+            success: true,
+            data: mappedAlerts,
+            message: 'DTR alerts fetched successfully',
+            userLocation: userLocationId,
+            filteredByLocation: !!userLocationId
+        });
+    } catch (error) {
+        console.error('Error fetching DTR alerts:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch DTR alerts',
+            error: error.message
+        });
+    }
+};
+
+export const getDTRAlertsTrends = async (req, res) => {
+    try {
+        // Get user's location from req.user (populated by middleware)
+        const userLocationId = req.user?.locationId;
+        
+        // Only pass locationId if it's not null/undefined (null = show all data)
+        const locationIdForFilter = userLocationId || null;
+        
+        // Pass locationId to DTRDB method (null = all data, locationId = filtered data)
+        const trends = await DTRDB.getDTRAlertsTrends(locationIdForFilter);
+        
+        res.json({
+            success: true,
+            data: trends,
+            message: 'DTR alerts trends fetched successfully',
+            userLocation: userLocationId,
+            filteredByLocation: !!userLocationId
+        });
+    } catch (error) {
+        console.error('Error fetching DTR alerts trends:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch DTR alerts trends',
+            error: error.message
+        });
+    }
+};
+
+export const getDTRStats = async (req, res) => {
+    try {
+        const stats = await DTRDB.getDTRStats();
+        
+        // Map stats to match frontend card field names exactly
+        const mappedStats = {
+            totalDtrs: stats.totalDTRs || 0,
+            totalLtFeeders: stats.totalLTFeeders || 0,
+            totalFuseBlown: stats.totalFuseBlown || 0,
+            fuseBlownPercentage: stats.percentTotalFuseBlown || 0,
+            overloadedFeeders: stats.overloadedDTRs || 0,
+            overloadedPercentage: stats.percentOverloadedFeeders || 0,
+            underloadedFeeders: stats.underloadedDTRs || 0,
+            underloadedPercentage: stats.percentUnderloadedFeeders || 0,
+            ltSideFuseBlown: stats.ltFuseBlown || 0,
+            unbalancedDtrs: stats.unbalancedDTRs || 0,
+            unbalancedPercentage: stats.percentUnbalancedDTRs || 0,
+            powerFailureFeeders: stats.powerFailureFeeders || 0,
+            powerFailurePercentage: stats.percentPowerFailureFeeders || 0,
+            htSideFuseBlown: stats.htFuseBlown || 0,
+            activeDtrs: stats.activeDTRs || 0,
+            activePercentage: stats.activeDTRs && stats.totalDTRs ? ((stats.activeDTRs / stats.totalDTRs) * 100).toFixed(2) : 0,
+            inactiveDtrs: stats.inactiveDTRs || 0,
+            inactivePercentage: stats.inactiveDTRs && stats.totalDTRs ? ((stats.inactiveDTRs / stats.totalDTRs) * 100).toFixed(2) : 0
+        };
+
+        res.json({
+            success: true,
+            data: mappedStats,
+            message: 'DTR stats fetched successfully'
+        });
+    } catch (error) {
+        console.error('Error fetching DTR stats:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch DTR stats',
+            error: error.message
+        });
+    }
+};
+
+export const getConsumptionStats = async (req, res) => {
+    try {
+        const stats = await DTRDB.getConsumptionStats();
+        
+        // Map consumption stats to match frontend card field names exactly
+        const mappedStats = {
+            totalKwh: stats.totalKWh || '0',
+            totalKvah: stats.totalKVAh || '0',
+            totalKw: stats.totalKW || '0',
+            totalKva: stats.totalKVA || '0'
+        };
+
+        res.json({
+            success: true,
+            data: mappedStats,
+            message: 'Consumption stats fetched successfully'
+        });
+    } catch (error) {
+        console.error('Error fetching consumption stats:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch consumption stats',
+            error: error.message
+        });
+    }
+};
+
+export const getFeederStats = async (req, res) => {
+    try {
+        const { dtrId } = req.params;
+        const stats = await DTRDB.getFeederStats(dtrId);
+        res.json({
+            success: true,
+            data: stats,
+            message: 'Feeder stats fetched successfully'
+        });
+    } catch (error) {
+        console.error('Error fetching feeder stats:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch feeder stats',
+            error: error.message
+        });
+    }
+};
+
+export const getInstantaneousStats = async (req, res) => {
+    try {
+        const { dtrId } = req.params;
+        const stats = await DTRDB.getInstantaneousStats(dtrId);
+        console.log(stats);
+        res.json({
+            success: true,
+            data: stats,
+            message: 'Instantaneous stats fetched successfully'
+        });
+    } catch (error) {
+        console.error('Error fetching instantaneous stats:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch instantaneous stats',
+            error: error.message
+        });
+    }
+};
+
+export const getConsolidatedDTRStats = async (req, res) => {
+    try {
+        // Get user's location from req.user (populated by middleware)
+        const userLocationId = req.user?.locationId;
+        
+        // Only pass locationId if it's not null/undefined (null = show all data)
+        const locationIdForFilter = userLocationId || null;
+        
+        // Pass locationId to DTRDB method (null = all data, locationId = filtered data)
+        const stats = await DTRDB.getConsolidatedDTRStats(locationIdForFilter);
+        
+        res.json({
+            success: true,
+            data: stats,
+            message: 'Consolidated DTR stats fetched successfully',
+            userLocation: userLocationId,
+            filteredByLocation: !!userLocationId
+        });
+    } catch (error) {
+        console.error('Error fetching consolidated DTR stats:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch consolidated DTR stats',
+            error: error.message
+        });
+    }
+}; 
+
+export const getDTRConsumptionAnalytics = async (req, res) => {
+    try {
+        const { dtrId } = req.params;
+        
+        const consumptionOnDaily = await DTRDB.getDTRMainGraphAnalytics(dtrId, 'daily');
+        const consumptionOnMonthly = await DTRDB.getDTRMainGraphAnalytics(dtrId, 'monthly');
+        
+        const { dailyxAxisData, dailysums } = consumptionOnDaily.reduce(
+            (acc, item) => {
+                acc.dailyxAxisData.push(item.consumption_date);
+                acc.dailysums.push((item.total_consumption || 0).toFixed(2));
+                return acc;
+            },
+            { dailyxAxisData: [], dailysums: [] }
+        );
+        
+        const daily = fillMissingDatesDyno(
+            dailyxAxisData,
+            dailysums,
+            'DD MMM, YYYY',
+            'day'
+        );
+        
+        const { monthlyxAxisData, monthlysums } = consumptionOnMonthly.reduce(
+            (acc, item) => {
+                acc.monthlyxAxisData.push(
+                    getDateInMYFormat(item.consumption_date)
+                );
+                acc.monthlysums.push((item.total_consumption || 0).toFixed(2));
+                return acc;
+            },
+            { monthlyxAxisData: [], monthlysums: [] }
+        );
+        
+        const monthly = fillMissingDatesDyno(
+            monthlyxAxisData,
+            monthlysums,
+            'DD MMM, YYYY',
+            'month'
+        );
+
+        const dailyData = {
+            xAxisData: daily.dates,
+            sums: daily.values,
+        };
+
+        const monthlyData = {
+            xAxisData: monthly.dates,
+            sums: monthly.values,
+        };
+        
+        res.status(200).json({
+            status: 'success',
+            data: {
+                dailyData,
+                monthlyData,
+            },
+        });
+    } catch (error) {
+        console.error('Error fetching DTR consumption analytics:', {
+            error: error.message,
+            stack: error.stack,
+            timestamp: getDateTime(),
+        });
+
+        res.status(500).json({
+            status: 'error',
+            message: 'An error occurred while fetching DTR consumption analytics',
+            errorId: error.code || 'INTERNAL_SERVER_ERROR',
+        });
+    }
+};
+
+export const getIndividualDTRAlerts = async (req, res) => {
+    try {
+        const { dtrId } = req.params;
+        const alerts = await DTRDB.getIndividualDTRAlerts(dtrId);
+        
+        // Map alerts to match frontend table columns exactly
+        const mappedAlerts = alerts.map(alert => ({
+            alert: alert.faultType || 'NA',
+            date: alert.createdAt ? new Date(alert.createdAt).toLocaleString() : 'NA',
+            status: alert.status || 'NA',
+            dtrNumber: alert.dtrs?.dtrNumber || 'NA',
+            location: alert.dtrs?.locations?.name || 'NA'
+        }));
+
+        res.json({
+            success: true,
+            data: mappedAlerts,
+            message: 'Individual DTR alerts fetched successfully'
+        });
+    } catch (error) {
+        console.error('Error fetching individual DTR alerts:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch individual DTR alerts',
+            error: error.message
+        });
+    }
+};
+
+export const getKVAMetrics = async (req, res) => {
+    try {
+        const { dtrId } = req.params;
+        
+        const kvaOnDaily = await DTRDB.getKVAMetrics(dtrId, 'daily');
+        console.log('kvaOnDaily', kvaOnDaily);
+        const kvaOnMonthly = await DTRDB.getKVAMetrics(dtrId, 'monthly');
+        console.log('kvaOnMonthly', kvaOnMonthly);
+        const { dailyxAxisData, dailysums } = kvaOnDaily.reduce(
+            (acc, item) => {
+                acc.dailyxAxisData.push(item.kva_date);
+                acc.dailysums.push((item.total_kva || 0).toFixed(2));
+                return acc;
+            },
+            { dailyxAxisData: [], dailysums: [] }
+        );
+        
+        const daily = fillMissingDatesDyno(
+            dailyxAxisData,
+            dailysums,
+            'DD MMM, YYYY',
+            'day'
+        );
+        
+        const { monthlyxAxisData, monthlysums } = kvaOnMonthly.reduce(
+            (acc, item) => {
+                acc.monthlyxAxisData.push(
+                    getDateInMYFormat(item.kva_date)
+                );
+                acc.monthlysums.push((item.total_kva || 0).toFixed(2));
+                return acc;
+            },
+            { monthlyxAxisData: [], monthlysums: [] }
+        );
+        
+        const monthly = fillMissingDatesDyno(
+            monthlyxAxisData,
+            monthlysums,
+            'DD MMM, YYYY',
+            'month'
+        );
+
+        const dailyData = {
+            xAxisData: daily.dates,
+            sums: daily.values,
+        };
+
+        const monthlyData = {
+            xAxisData: monthly.dates,
+            sums: monthly.values,
+        };
+        
+        res.status(200).json({
+            status: 'success',
+            data: {
+                dailyData,
+                monthlyData,
+            },
+        });
+    } catch (error) {
+        console.error('Error fetching DTR kVA metrics:', {
+            error: error.message,
+            stack: error.stack,
+            timestamp: getDateTime(),
+        });
+
+        res.status(500).json({
+            status: 'error',
+            message: 'An error occurred while fetching DTR kVA metrics',
+            errorId: error.code || 'INTERNAL_SERVER_ERROR',
+        });
+    }
+};
+
