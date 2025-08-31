@@ -385,6 +385,7 @@ model permissions {
   createdAt        DateTime           @default(now())
   updatedAt        DateTime
   user_permissions user_permissions[]
+  role_permissions role_permissions[]
 }
 
 model potential_transformers {
@@ -408,12 +409,13 @@ model potential_transformers {
 model role_permissions {
   id           Int         @id @default(autoincrement())
   roleId       Int
-  permissionId Json
+  permissionId Int
   isGranted    Boolean     @default(true)
   restrictions Json?
   createdAt    DateTime    @default(now())
   updatedAt    DateTime
   roles        roles       @relation(fields: [roleId], references: [id])
+  permissions  permissions @relation(fields: [permissionId], references: [id])
 
   @@unique([roleId, permissionId])
 }
