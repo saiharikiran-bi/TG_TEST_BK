@@ -599,15 +599,15 @@ export const getMeterStatus = async (req, res) => {
             }
         }
 
-        // Format data to match frontend expectations
+                // Format data to match frontend expectations
         const responseData = [
-            { 
+            {
                 value: meterStats.communicatingMeters, 
-                name: "Communicating" 
+                name: "Active" 
             },
             { 
                 value: meterStats.nonCommunicatingMeters, 
-                name: "Non-Communicating" 
+                name: "Inactive" 
             }
         ];
 
