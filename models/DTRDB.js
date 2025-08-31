@@ -110,47 +110,55 @@ class DTRDB {
 
     // Helper method to resolve DTR ID consistently
     static async resolveDTRId(dtrId) {
+        // Validate input parameter
+        if (!dtrId && dtrId !== 0) {
+            throw new Error('DTR ID is required');
+        }
+
         // Try to find DTR by ID (both as integer and string)
-        let dtr = await prisma.dtrs.findUnique({
-            where: { id: parseInt(dtrId) }
-        });
+        const parsedId = parseInt(dtrId);
+        if (!isNaN(parsedId) && parsedId > 0) {
+            let dtr = await prisma.dtrs.findUnique({
+                where: { id: parsedId }
+            });
+            if (dtr) return dtr;
+        }
 
         // If not found by parsed integer, try by dtrNumber
-        if (!dtr) {
-            dtr = await prisma.dtrs.findFirst({
+        if (dtrId && typeof dtrId === 'string') {
+            let dtr = await prisma.dtrs.findFirst({
                 where: { dtrNumber: dtrId }
             });
+            if (dtr) return dtr;
         }
 
         // If still not found, try to find by partial dtrNumber match
         // This handles cases where frontend sends "201" but DB stores "DTR-201"
-        if (!dtr) {
-            dtr = await prisma.dtrs.findFirst({
+        if (dtrId && typeof dtrId === 'string') {
+            let dtr = await prisma.dtrs.findFirst({
                 where: {
                     dtrNumber: {
                         contains: dtrId.toString()
                     }
                 }
             });
+            if (dtr) return dtr;
         }
 
         // If still not found, try to find by dtrNumber ending with the provided value
         // This handles cases where frontend sends "201" but DB stores "DTR-201"
-        if (!dtr) {
-            dtr = await prisma.dtrs.findFirst({
+        if (dtrId && typeof dtrId === 'string') {
+            let dtr = await prisma.dtrs.findFirst({
                 where: {
                     dtrNumber: {
                         endsWith: dtrId.toString()
                     }
                 }
             });
+            if (dtr) return dtr;
         }
 
-        if (!dtr) {
-            throw new Error(`DTR not found with ID or number: ${dtrId}`);
-        }
-
-        return dtr;
+        throw new Error(`DTR not found with ID or number: ${dtrId}`);
     }
 
     static async getFeedersForDTR(dtrId) {
@@ -1035,20 +1043,60 @@ class DTRDB {
     static async getIndividualDTRAlerts(dtrId) {
         try {
             const dtr = await DTRDB.resolveDTRId(dtrId);
-            const alerts = await prisma.dtr_faults.findMany({
+            
+            // Get all meters associated with this DTR
+            const meters = await prisma.meters.findMany({
+                where: { dtrId: dtr.id },
+                select: { id: true, meterNumber: true, serialNumber: true }
+            });
+            
+            if (meters.length === 0) {
+                return [];
+            }
+            
+            const meterIds = meters.map(m => m.id);
+            
+            const alerts = await prisma.escalation_notifications.findMany({
                 where: {
-                    dtrId: dtr.id
+                    meterid: { in: meterIds }
                 },
                 include: {
-                    dtrs: {
+                    meters: {
                         include: {
-                            locations: true
+                            dtrs: {
+                                include: {
+                                    locations: true
+                                }
+                            }
                         }
                     }
                 },
-                orderBy: { createdAt: 'desc' }
+                orderBy: { createdat: 'desc' }
             });
-            return alerts;
+            
+            const mappedAlerts = alerts.map(alert => ({
+                id: alert.id,
+                meterId: alert.meterid,
+                type: alert.type,
+                level: alert.level,
+                message: alert.message,
+                status: alert.status,
+                createdAt: alert.createdat,
+                scheduledFor: alert.scheduledfor,
+                sentAt: alert.sentat,
+                resolvedAt: alert.resolvedat,
+                dtrNumber: alert.dtrnumber,
+                meterNumber: alert.meternumber,
+                abnormalityType: alert.abnormalitytype,
+                isResolved: alert.resolvedat !== null,
+                isSent: alert.sentat !== null,
+                escalationAge: alert.resolvedat ? 
+                    Math.floor((new Date(alert.resolvedat) - new Date(alert.createdat)) / (1000 * 60 * 60 * 24)) : 
+                    Math.floor((new Date() - new Date(alert.createdat)) / (1000 * 60 * 60 * 24)),
+                meters: alert.meters
+            }));
+            
+            return mappedAlerts;
         } catch (error) {
             console.error('Error fetching individual DTR alerts:', error);
             throw error;

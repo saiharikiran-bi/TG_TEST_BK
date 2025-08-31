@@ -1,5 +1,34 @@
 import DTRDB from '../models/DTRDB.js';
 import { getDateTime, getDateInYMDFormat, getDateInMYFormat, fillMissingDatesDyno } from '../utils/utils.js';
+
+export const getDTRFilterOptions = async (req, res) => {
+    try {
+        // Get filter options for DTRs (locations, statuses, etc.)
+        const locations = await prisma.locations.findMany({
+            select: { id: true, name: true, code: true }
+        });
+        
+        const dtrStatuses = ['Active', 'Inactive', 'Maintenance', 'Fault'];
+        const dtrCapacities = ['100 KVA', '200 KVA', '315 KVA', '400 KVA', '500 KVA', '630 KVA', '1000 KVA'];
+        
+        res.json({
+            success: true,
+            data: {
+                locations,
+                statuses: dtrStatuses,
+                capacities: dtrCapacities
+            },
+            message: 'DTR filter options fetched successfully'
+        });
+    } catch (error) {
+        console.error('Error fetching DTR filter options:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch DTR filter options',
+            error: error.message
+        });
+    }
+};
 import LocationDB from '../models/LocationDB.js';
 
 export const getDTRTable = async (req, res) => {
@@ -60,7 +89,18 @@ console.log(result);
 export const getFeedersForDTR = async (req, res) => {
     try {
         const { dtrId } = req.params;
+        
+        // Prevent invalid DTR IDs from being processed
+        if (!dtrId || dtrId === 'stats' || dtrId === 'alerts') {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid DTR ID provided',
+                error: `DTR ID "${dtrId}" is not valid. Expected a numeric ID or DTR number.`
+            });
+        }
+        
         const feedersData = await DTRDB.getFeedersForDTR(dtrId);
+        console.log('feedersData',feedersData);
         
         // Map feeders data to match frontend expectations
         const mappedFeeders = feedersData.feeders.map((feeder, idx) => ({
@@ -245,6 +285,7 @@ export const getFeederStats = async (req, res) => {
     try {
         const { dtrId } = req.params;
         const stats = await DTRDB.getFeederStats(dtrId);
+        console.log('satats',stats);
         res.json({
             success: true,
             data: stats,
@@ -386,13 +427,11 @@ export const getIndividualDTRAlerts = async (req, res) => {
         const { dtrId } = req.params;
         const alerts = await DTRDB.getIndividualDTRAlerts(dtrId);
         
-        // Map alerts to match frontend table columns exactly
         const mappedAlerts = alerts.map(alert => ({
-            alert: alert.faultType || 'NA',
-            date: alert.createdAt ? new Date(alert.createdAt).toLocaleString() : 'NA',
-            status: alert.status || 'NA',
-            dtrNumber: alert.dtrs?.dtrNumber || 'NA',
-            location: alert.dtrs?.locations?.name || 'NA'
+            alertId: alert.id || 'NA',
+            type: alert.type || alert.abnormalityType || 'NA',
+            feederName: alert.meterNumber || alert.meters?.meterNumber || alert.meters?.serialNumber || 'N/A',
+            occuredOn: alert.createdAt ? new Date(alert.createdAt).toLocaleString() : 'NA'
         }));
 
         res.json({
@@ -484,12 +523,92 @@ export const getKVAMetrics = async (req, res) => {
     }
 };
 
+export const getMeterStatus = async (req, res) => {
+    try {        
+        // Get user's location from req.user (populated by middleware)
+        const userLocationId = req.user?.locationId;
+        
+        // Build where clause for location filtering
+        const whereClause = {};
+        if (userLocationId) {
+            whereClause.locationId = userLocationId;
+        }
+
+        // Get DTRs with their meter communication status
+        const dtrs = await DTRDB.getDTRTable({
+            page: 1,
+            pageSize: 1000, // Get all DTRs for communication status
+            locationId: userLocationId
+        });
+
+        // Calculate communication statistics
+        const totalDTRs = dtrs.total;
+        const connectedDTRs = dtrs.data.filter(dtr => 
+            dtr.lastCommunication && 
+            new Date(dtr.lastCommunication) > new Date(Date.now() - 24 * 60 * 60 * 1000) // Last 24 hours
+        ).length;
+        const disconnectedDTRs = totalDTRs - connectedDTRs;
+
+        // Get meter-specific communication data
+        const meterStats = {
+            totalMeters: 0,
+            communicatingMeters: 0,
+            nonCommunicatingMeters: 0,
+            lastUpdated: new Date().toISOString()
+        };
+
+        // Count meters associated with DTRs
+        for (const dtr of dtrs.data) {
+            meterStats.totalMeters += dtr.feedersCount || 0;
+            
+            // If DTR is communicating, assume its meters are too
+            if (dtr.lastCommunication && 
+                new Date(dtr.lastCommunication) > new Date(Date.now() - 24 * 60 * 60 * 1000)) {
+                meterStats.communicatingMeters += dtr.feedersCount || 0;
+            } else {
+                meterStats.nonCommunicatingMeters += dtr.feedersCount || 0;
+            }
+        }
+
+        // Format data to match frontend expectations
+        const responseData = [
+            { 
+                value: meterStats.communicatingMeters, 
+                name: "Communicating" 
+            },
+            { 
+                value: meterStats.nonCommunicatingMeters, 
+                name: "Non-Communicating" 
+            }
+        ];
+
+
+        res.json({
+            success: true,
+            data: responseData,
+            message: 'Meter communication status retrieved successfully',
+            userLocation: userLocationId,
+            filteredByLocation: !!userLocationId
+        });
+
+    } catch (error) {
+        console.error('❌ Error fetching meter status:', {
+            error: error.message,
+            stack: error.stack,
+            timestamp: getDateTime(),
+        });
+
+        res.status(500).json({
+            success: false,
+            message: 'An error occurred while fetching meter communication status',
+            error: error.message
+        });
+    }
+};
+
 export const getFilterOptions = async (req, res) => {
     try {
         const { parentId, locationTypeId } = req.query; 
-        console.log('parentId');
-        console.log(parentId);
-        console.log(locationTypeId);
         const locationDB = new LocationDB()  
         const locations = await locationDB.getFilterOptions(parentId, locationTypeId);
         console.log('locationssss', locations);
