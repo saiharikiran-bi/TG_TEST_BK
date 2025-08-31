@@ -1,6 +1,35 @@
 import DTRDB from '../models/DTRDB.js';
 import { getDateTime, getDateInYMDFormat, getDateInMYFormat, fillMissingDatesDyno } from '../utils/utils.js';
 
+export const getDTRFilterOptions = async (req, res) => {
+    try {
+        // Get filter options for DTRs (locations, statuses, etc.)
+        const locations = await prisma.locations.findMany({
+            select: { id: true, name: true, code: true }
+        });
+        
+        const dtrStatuses = ['Active', 'Inactive', 'Maintenance', 'Fault'];
+        const dtrCapacities = ['100 KVA', '200 KVA', '315 KVA', '400 KVA', '500 KVA', '630 KVA', '1000 KVA'];
+        
+        res.json({
+            success: true,
+            data: {
+                locations,
+                statuses: dtrStatuses,
+                capacities: dtrCapacities
+            },
+            message: 'DTR filter options fetched successfully'
+        });
+    } catch (error) {
+        console.error('Error fetching DTR filter options:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch DTR filter options',
+            error: error.message
+        });
+    }
+};
+
 export const getDTRTable = async (req, res) => {
     try {
         const { page, pageSize, search, status, locationId } = req.query;
@@ -59,7 +88,18 @@ console.log(result);
 export const getFeedersForDTR = async (req, res) => {
     try {
         const { dtrId } = req.params;
+        
+        // Prevent invalid DTR IDs from being processed
+        if (!dtrId || dtrId === 'stats' || dtrId === 'alerts') {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid DTR ID provided',
+                error: `DTR ID "${dtrId}" is not valid. Expected a numeric ID or DTR number.`
+            });
+        }
+        
         const feedersData = await DTRDB.getFeedersForDTR(dtrId);
+        console.log('feedersData',feedersData);
         
         // Map feeders data to match frontend expectations
         const mappedFeeders = feedersData.feeders.map((feeder, idx) => ({
@@ -245,6 +285,7 @@ export const getFeederStats = async (req, res) => {
     try {
         const { dtrId } = req.params;
         const stats = await DTRDB.getFeederStats(dtrId);
+        console.log('satats',stats);
         res.json({
             success: true,
             data: stats,
@@ -385,6 +426,7 @@ export const getIndividualDTRAlerts = async (req, res) => {
     try {
         const { dtrId } = req.params;
         const alerts = await DTRDB.getIndividualDTRAlerts(dtrId);
+        console.log('alerts',alerts);
         
         // Map alerts to match frontend table columns exactly
         const mappedAlerts = alerts.map(alert => ({
