@@ -127,7 +127,8 @@ export const getFeedersForDTR = async (req, res) => {
             model: feedersData.dtr.model || 'NA',
             capacity: feedersData.dtr.capacity || 0,
             loadPercentage: feedersData.dtr.loadPercentage || 0,
-            status: feedersData.dtr.status || 'NA'
+            status: feedersData.dtr.status || 'NA',
+            lastCommunication: feedersData.dtr.lastCommunication || null
         };
 
         res.json({
@@ -285,7 +286,6 @@ export const getFeederStats = async (req, res) => {
     try {
         const { dtrId } = req.params;
         const stats = await DTRDB.getFeederStats(dtrId);
-        console.log('satats',stats);
         res.json({
             success: true,
             data: stats,
