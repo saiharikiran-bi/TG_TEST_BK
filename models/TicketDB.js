@@ -645,6 +645,139 @@ class TicketDB {
     }
 
     
+    static async updateTicket(ticketId, updateData) {
+        try {
+            const ticket = await prisma.tickets.update({
+                where: { id: ticketId },
+                data: {
+                    ...updateData,
+                    updatedAt: new Date()
+                },
+                include: {
+                    dtrs: {
+                        include: {
+                            locations: true
+                        }
+                    },
+                    users_tickets_raisedByIdTousers: {
+                        select: {
+                            username: true,
+                            firstName: true,
+                            lastName: true,
+                            email: true
+                        }
+                    },
+                    users_tickets_assignedToIdTousers: {
+                        select: {
+                            username: true,
+                            firstName: true,
+                            lastName: true,
+                            email: true
+                        }
+                    }
+                }
+            });
+            
+            return ticket;
+        } catch (error) {
+            console.error('TicketDB.updateTicket: Database error:', error);
+            throw error;
+        }
+    }
+
+    static async updateTicketStatus(ticketId, status) {
+        try {
+            const ticket = await prisma.tickets.update({
+                where: { id: ticketId },
+                data: {
+                    status,
+                    updatedAt: new Date()
+                },
+                include: {
+                    dtrs: {
+                        include: {
+                            locations: true
+                        }
+                    },
+                    users_tickets_raisedByIdTousers: {
+                        select: {
+                            username: true,
+                            firstName: true,
+                            lastName: true,
+                            email: true
+                        }
+                    },
+                    users_tickets_assignedToIdTousers: {
+                        select: {
+                            username: true,
+                            firstName: true,
+                            lastName: true,
+                            email: true
+                        }
+                    }
+                }
+            });
+            
+            return ticket;
+        } catch (error) {
+            console.error('TicketDB.updateTicketStatus: Database error:', error);
+            throw error;
+        }
+    }
+
+    static async assignTicket(ticketId, assignedToId) {
+        try {
+            const ticket = await prisma.tickets.update({
+                where: { id: ticketId },
+                data: {
+                    assignedToId,
+                    status: 'ASSIGNED',
+                    updatedAt: new Date()
+                },
+                include: {
+                    dtrs: {
+                        include: {
+                            locations: true
+                        }
+                    },
+                    users_tickets_raisedByIdTousers: {
+                        select: {
+                            username: true,
+                            firstName: true,
+                            lastName: true,
+                            email: true
+                        }
+                    },
+                    users_tickets_assignedToIdTousers: {
+                        select: {
+                            username: true,
+                            firstName: true,
+                            lastName: true,
+                            email: true
+                        }
+                    }
+                }
+            });
+            
+            return ticket;
+        } catch (error) {
+            console.error('TicketDB.assignTicket: Database error:', error);
+            throw error;
+        }
+    }
+
+    static async deleteTicket(ticketId) {
+        try {
+            const ticket = await prisma.tickets.delete({
+                where: { id: ticketId }
+            });
+            
+            return ticket;
+        } catch (error) {
+            console.error('TicketDB.deleteTicket: Database error:', error);
+            throw error;
+        }
+    }
 }
 
 export default TicketDB; 
