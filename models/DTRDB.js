@@ -110,47 +110,55 @@ class DTRDB {
 
     // Helper method to resolve DTR ID consistently
     static async resolveDTRId(dtrId) {
+        // Validate input parameter
+        if (!dtrId && dtrId !== 0) {
+            throw new Error('DTR ID is required');
+        }
+
         // Try to find DTR by ID (both as integer and string)
-        let dtr = await prisma.dtrs.findUnique({
-            where: { id: parseInt(dtrId) }
-        });
+        const parsedId = parseInt(dtrId);
+        if (!isNaN(parsedId) && parsedId > 0) {
+            let dtr = await prisma.dtrs.findUnique({
+                where: { id: parsedId }
+            });
+            if (dtr) return dtr;
+        }
 
         // If not found by parsed integer, try by dtrNumber
-        if (!dtr) {
-            dtr = await prisma.dtrs.findFirst({
+        if (dtrId && typeof dtrId === 'string') {
+            let dtr = await prisma.dtrs.findFirst({
                 where: { dtrNumber: dtrId }
             });
+            if (dtr) return dtr;
         }
 
         // If still not found, try to find by partial dtrNumber match
         // This handles cases where frontend sends "201" but DB stores "DTR-201"
-        if (!dtr) {
-            dtr = await prisma.dtrs.findFirst({
+        if (dtrId && typeof dtrId === 'string') {
+            let dtr = await prisma.dtrs.findFirst({
                 where: {
                     dtrNumber: {
                         contains: dtrId.toString()
                     }
                 }
             });
+            if (dtr) return dtr;
         }
 
         // If still not found, try to find by dtrNumber ending with the provided value
         // This handles cases where frontend sends "201" but DB stores "DTR-201"
-        if (!dtr) {
-            dtr = await prisma.dtrs.findFirst({
+        if (dtrId && typeof dtrId === 'string') {
+            let dtr = await prisma.dtrs.findFirst({
                 where: {
                     dtrNumber: {
                         endsWith: dtrId.toString()
                     }
                 }
             });
+            if (dtr) return dtr;
         }
 
-        if (!dtr) {
-            throw new Error(`DTR not found with ID or number: ${dtrId}`);
-        }
-
-        return dtr;
+        throw new Error(`DTR not found with ID or number: ${dtrId}`);
     }
 
     static async getFeedersForDTR(dtrId) {
@@ -184,6 +192,39 @@ class DTRDB {
                 location: locationMap[f.locationId] || null
             }));
 
+            // Get the latest communication date for this DTR's meters
+            const meterIds = feedersRaw.map(f => f.id);
+            let lastCommunication = null;
+            
+            if (meterIds.length > 0) {
+                const latestReading = await prisma.meter_readings.findFirst({
+                    where: {
+                        meterId: { in: meterIds }
+                    },
+                    orderBy: { readingDate: 'desc' },
+                    select: { readingDate: true }
+                });
+                
+                if (latestReading?.readingDate) {
+                    // Convert to local time in IST timezone for consistent frontend display
+                    const utcDate = new Date(latestReading.readingDate);
+                    
+                    // Get the time components (treating them as local time, not UTC)
+                    const year = utcDate.getUTCFullYear();
+                    const month = utcDate.getUTCMonth();
+                    const day = utcDate.getUTCDate();
+                    const hour = utcDate.getUTCHours();
+                    const minute = utcDate.getUTCMinutes();
+                    const second = utcDate.getUTCSeconds();
+                    
+                    // Create a new date object with these components in local timezone
+                    const localDate = new Date(year, month, day, hour, minute, second);
+                    
+                    // Send ISO string that JavaScript can definitely parse
+                    lastCommunication = localDate.toISOString();
+                }
+            }
+            
             return {
                 dtr: {
                     id: dtr.id,
@@ -193,7 +234,8 @@ class DTRDB {
                     model: dtr.model,
                     capacity: dtr.capacity,
                     loadPercentage: dtr.loadPercentage,
-                    status: dtr.status
+                    status: dtr.status,
+                    lastCommunication: lastCommunication
                 },
                 feeders: feeders
             };
@@ -617,6 +659,37 @@ class DTRDB {
             const powerOnHours = null;
             const powerOffHours = null;
 
+            // Get the latest communication date for this DTR's meters
+            let lastCommunication = null;
+            if (meterIds.length > 0) {
+                const latestReading = await prisma.meter_readings.findFirst({
+                    where: {
+                        meterId: { in: meterIds }
+                    },
+                    orderBy: { readingDate: 'desc' },
+                    select: { readingDate: true }
+                });
+                
+                if (latestReading?.readingDate) {
+                    // Convert to local time in IST timezone for consistent frontend display
+                    const utcDate = new Date(latestReading.readingDate);
+                    
+                    // Get the time components (treating them as local time, not UTC)
+                    const year = utcDate.getUTCFullYear();
+                    const month = utcDate.getUTCMonth();
+                    const day = utcDate.getUTCDate();
+                    const hour = utcDate.getUTCHours();
+                    const minute = utcDate.getUTCMinutes();
+                    const second = utcDate.getUTCSeconds();
+                    
+                    // Create a new date object with these components in local timezone
+                    const localDate = new Date(year, month, day, hour, minute, second);
+                    
+                    // Send ISO string that JavaScript can definitely parse
+                    lastCommunication = localDate.toISOString();
+                }
+            }
+
             return {
                 totalLTFeeders,
                 totalKW,
@@ -627,7 +700,8 @@ class DTRDB {
                 unbalancedLTFeeders,
                 status,
                 powerOnHours,
-                powerOffHours
+                powerOffHours,
+                lastCommunication
             };
         } catch (error) {
             console.error('Error fetching feeder stats:', error);
@@ -795,32 +869,101 @@ class DTRDB {
                     }
                 };
 
-                const result = await prisma.meter_readings.groupBy({
-                    by: ['readingDate'],
+                // Get all readings for the date range
+                const allReadings = await prisma.meter_readings.findMany({
                     where: whereClause,
-                    _count: {
-                        id: true
+                    select: {
+                        meterId: true,
+                        readingDate: true,
+                        kWh: true,
+                        kVAh: true,
+                        kW: true,
+                        kVA: true
                     },
-                _sum: {
-                    kWh: true,
-                    kVAh: true,
-                    kW: true,
-                    kVA: true
-                },
                     orderBy: {
                         readingDate: 'asc'
                     }
                 });
 
-                return result.map(item => ({
-                    consumption_date: getDateInYMDFormat(item.readingDate),
-                    count: item._count.id,
-                    total_kwh: item._sum.kWh || 0,
-                    total_kvah: item._sum.kVAh || 0,
-                    total_kw: item._sum.kW || 0,
-                    total_kva: item._sum.kVA || 0
-                }));
+                // Group readings by date and calculate consumption as (last - first) for each day
+                const dailyConsumption = {};
+                
+                allReadings.forEach(reading => {
+                    const dateKey = getDateInYMDFormat(reading.readingDate);
+                    
+                    if (!dailyConsumption[dateKey]) {
+                        dailyConsumption[dateKey] = {
+                            consumption_date: dateKey,
+                            count: 0,
+                            total_kwh: 0,
+                            total_kvah: 0,
+                            total_kw: 0,
+                            total_kva: 0,
+                            readings: []
+                        };
+                    }
+                    
+                    dailyConsumption[dateKey].readings.push({
+                        meterId: reading.meterId,
+                        readingDate: reading.readingDate,
+                        kWh: reading.kWh,
+                        kVAh: reading.kVAh,
+                        kW: reading.kW,
+                        kVA: reading.kVA
+                    });
+                    dailyConsumption[dateKey].count++;
+                });
 
+                // Calculate consumption for each day: (last reading - first reading) for each meter
+                const result = Object.values(dailyConsumption).map(dayData => {
+                    let totalKwh = 0;
+                    let totalKvah = 0;
+                    let totalKw = 0;
+                    let totalKva = 0;
+                    
+                    // Group readings by meter for this day
+                    const meterReadings = {};
+                    dayData.readings.forEach(reading => {
+                        if (!meterReadings[reading.meterId]) {
+                            meterReadings[reading.meterId] = [];
+                        }
+                        meterReadings[reading.meterId].push(reading);
+                    });
+                    
+                    // Calculate consumption for each meter: last reading - first reading
+                    Object.values(meterReadings).forEach(meterDayReadings => {
+                        if (meterDayReadings.length > 1) {
+                            // Sort by reading time to get first and last
+                            meterDayReadings.sort((a, b) => new Date(a.readingDate) - new Date(b.readingDate));
+                            
+                            const firstReading = meterDayReadings[0];
+                            const lastReading = meterDayReadings[meterDayReadings.length - 1];
+                            
+                            // Calculate consumption: last - first for each metric
+                            const meterKwh = (lastReading.kWh || 0) - (firstReading.kWh || 0);
+                            const meterKvah = (lastReading.kVAh || 0) - (firstReading.kVAh || 0);
+                            const meterKw = (lastReading.kW || 0) - (firstReading.kW || 0);
+                            const meterKva = (lastReading.kVA || 0) - (firstReading.kVA || 0);
+                            
+                            // Only add positive consumption values
+                            if (meterKwh >= 0) totalKwh += meterKwh;
+                            if (meterKvah >= 0) totalKvah += meterKvah;
+                            if (meterKw >= 0) totalKw += meterKw;
+                            if (meterKva >= 0) totalKva += meterKva;
+                        }
+                    });
+                    
+                    return {
+                        consumption_date: dayData.consumption_date,
+                        count: dayData.count,
+                        total_kwh: totalKwh,
+                        total_kvah: totalKvah,
+                        total_kw: totalKw,
+                        total_kva: totalKva
+                    };
+                });
+
+                return result;
             }
             // monthly
             const d1 = new Date();
@@ -837,13 +980,12 @@ class DTRDB {
                 }
             };
 
-            const result = await prisma.meter_readings.groupBy({
-                by: ['readingDate'],
+            // Get all readings for the date range
+            const allReadings = await prisma.meter_readings.findMany({
                 where: whereClause,
-                _count: {
-                    id: true
-                },
-                _sum: {
+                select: {
+                    meterId: true,
+                    readingDate: true,
                     kWh: true,
                     kVAh: true,
                     kW: true,
@@ -854,28 +996,85 @@ class DTRDB {
                 }
             });
 
-            // Group by month
-            const monthlyData = {};
-            result.forEach(item => {
-                const monthKey = getDateInYMDFormat(item.readingDate).slice(0, 7); // YYYY-MM format
-                if (!monthlyData[monthKey]) {
-                    monthlyData[monthKey] = {
+            // Group readings by month and calculate consumption as (last - first) for each month
+            const monthlyConsumption = {};
+            
+            allReadings.forEach(reading => {
+                const monthKey = getDateInYMDFormat(reading.readingDate).slice(0, 7); // YYYY-MM format
+                
+                if (!monthlyConsumption[monthKey]) {
+                    monthlyConsumption[monthKey] = {
                         consumption_date: monthKey,
                         count: 0,
                         total_kwh: 0,
                         total_kvah: 0,
                         total_kw: 0,
-                        total_kva: 0
+                        total_kva: 0,
+                        readings: []
                     };
                 }
-                monthlyData[monthKey].count += item._count.id;
-                monthlyData[monthKey].total_kwh += item._sum.kWh || 0;
-                monthlyData[monthKey].total_kvah += item._sum.kVAh || 0;
-                monthlyData[monthKey].total_kw += item._sum.kW || 0;
-                monthlyData[monthKey].total_kva += item._sum.kVA || 0;
+                
+                monthlyConsumption[monthKey].readings.push({
+                    meterId: reading.meterId,
+                    readingDate: reading.readingDate,
+                    kWh: reading.kWh,
+                    kVAh: reading.kVAh,
+                    kW: reading.kW,
+                    kVA: reading.kVA
+                });
+                monthlyConsumption[monthKey].count++;
             });
 
-            return Object.values(monthlyData).sort((a, b) => a.consumption_date.localeCompare(b.consumption_date));
+            // Calculate consumption for each month: (last reading - first reading) for each meter
+            const result = Object.values(monthlyConsumption).map(monthData => {
+                let totalKwh = 0;
+                let totalKvah = 0;
+                let totalKw = 0;
+                let totalKva = 0;
+                
+                // Group readings by meter for this month
+                const meterReadings = {};
+                monthData.readings.forEach(reading => {
+                    if (!meterReadings[reading.meterId]) {
+                        meterReadings[reading.meterId] = [];
+                    }
+                    meterReadings[reading.meterId].push(reading);
+                });
+                
+                // Calculate consumption for each meter: last reading - first reading
+                Object.values(meterReadings).forEach(meterMonthReadings => {
+                    if (meterMonthReadings.length > 1) {
+                        // Sort by reading time to get first and last
+                        meterMonthReadings.sort((a, b) => new Date(a.readingDate) - new Date(b.readingDate));
+                        
+                        const firstReading = meterMonthReadings[0];
+                        const lastReading = meterMonthReadings[meterMonthReadings.length - 1];
+                        
+                        // Calculate consumption: last - first for each metric
+                        const meterKwh = (lastReading.kWh || 0) - (firstReading.kWh || 0);
+                        const meterKvah = (lastReading.kVAh || 0) - (firstReading.kVAh || 0);
+                        const meterKw = (lastReading.kW || 0) - (firstReading.kW || 0);
+                        const meterKva = (lastReading.kVA || 0) - (firstReading.kVA || 0);
+                        
+                        // Only add positive consumption values
+                        if (meterKwh >= 0) totalKwh += meterKwh;
+                        if (meterKvah >= 0) totalKvah += meterKvah;
+                        if (meterKw >= 0) totalKw += meterKw;
+                        if (meterKva >= 0) totalKva += meterKva;
+                    }
+                });
+                
+                return {
+                    consumption_date: monthData.consumption_date,
+                    count: monthData.count,
+                    total_kwh: totalKwh,
+                    total_kvah: totalKvah,
+                    total_kw: totalKw,
+                    total_kva: totalKva
+                };
+            });
+
+            return result.sort((a, b) => a.consumption_date.localeCompare(b.consumption_date));
         } catch (error) {
             console.error('Error fetching DTR consumption analytics:', error);
             throw error;
@@ -960,13 +1159,12 @@ class DTRDB {
                     }
                 };
 
-                const result = await prisma.meter_readings.groupBy({
-                    by: ['readingDate'],
+                // Get all readings for the date range
+                const allReadings = await prisma.meter_readings.findMany({
                     where: whereClause,
-                    _count: {
-                        id: true
-                    },
-                    _sum: {
+                    select: {
+                        meterId: true,
+                        readingDate: true,
                         kWh: true
                     },
                     orderBy: {
@@ -974,12 +1172,67 @@ class DTRDB {
                     }
                 });
 
-                return result.map(item => ({
-                    consumption_date: getDateInYMDFormat(item.readingDate),
-                    count: item._count.id,
-                    total_consumption: item._sum.kWh || 0
-                }));
+                // Group readings by date and calculate consumption as (last - first) for each day
+                const dailyConsumption = {};
+                
+                allReadings.forEach(reading => {
+                    const dateKey = getDateInYMDFormat(reading.readingDate);
+                    
+                    if (!dailyConsumption[dateKey]) {
+                        dailyConsumption[dateKey] = {
+                            consumption_date: dateKey,
+                            count: 0,
+                            total_consumption: 0,
+                            readings: []
+                        };
+                    }
+                    
+                    dailyConsumption[dateKey].readings.push({
+                        meterId: reading.meterId,
+                        readingDate: reading.readingDate,
+                        kWh: reading.kWh
+                    });
+                    dailyConsumption[dateKey].count++;
+                });
 
+                // Calculate consumption for each day: (last reading - first reading) for each meter
+                const result = Object.values(dailyConsumption).map(dayData => {
+                    let totalConsumption = 0;
+                    
+                    // Group readings by meter for this day
+                    const meterReadings = {};
+                    dayData.readings.forEach(reading => {
+                        if (!meterReadings[reading.meterId]) {
+                            meterReadings[reading.meterId] = [];
+                        }
+                        meterReadings[reading.meterId].push(reading);
+                    });
+                    
+                    // Calculate consumption for each meter: last reading - first reading
+                    Object.values(meterReadings).forEach(meterDayReadings => {
+                        if (meterDayReadings.length > 1) {
+                            // Sort by reading time to get first and last
+                            meterDayReadings.sort((a, b) => new Date(a.readingDate) - new Date(b.readingDate));
+                            
+                            const firstReading = meterDayReadings[0];
+                            const lastReading = meterDayReadings[meterDayReadings.length - 1];
+                            
+                            // Calculate consumption: last - first
+                            const meterConsumption = (lastReading.kWh || 0) - (firstReading.kWh || 0);
+                            if (meterConsumption >= 0) { // Only add positive consumption
+                                totalConsumption += meterConsumption;
+                            }
+                        }
+                    });
+                    
+                    return {
+                        consumption_date: dayData.consumption_date,
+                        count: dayData.count,
+                        total_consumption: totalConsumption
+                    };
+                });
+
+                return result;
             }
             // monthly
             const d1 = new Date();
@@ -996,13 +1249,12 @@ class DTRDB {
                 }
             };
 
-            const result = await prisma.meter_readings.groupBy({
-                by: ['readingDate'],
+            // Get all readings for the date range
+            const allReadings = await prisma.meter_readings.findMany({
                 where: whereClause,
-                _count: {
-                    id: true
-                },
-                _sum: {
+                select: {
+                    meterId: true,
+                    readingDate: true,
                     kWh: true
                 },
                 orderBy: {
@@ -1010,22 +1262,67 @@ class DTRDB {
                 }
             });
 
-            // Group by month
-            const monthlyData = {};
-            result.forEach(item => {
-                const monthKey = getDateInYMDFormat(item.readingDate).slice(0, 7); // YYYY-MM format
-                if (!monthlyData[monthKey]) {
-                    monthlyData[monthKey] = {
+            // Group readings by month and calculate consumption as (last - first) for each month
+            const monthlyConsumption = {};
+            
+            allReadings.forEach(reading => {
+                const monthKey = getDateInYMDFormat(reading.readingDate).slice(0, 7); // YYYY-MM format
+                
+                if (!monthlyConsumption[monthKey]) {
+                    monthlyConsumption[monthKey] = {
                         consumption_date: monthKey,
                         count: 0,
-                        total_consumption: 0
+                        total_consumption: 0,
+                        readings: []
                     };
                 }
-                monthlyData[monthKey].count += item._count.id;
-                monthlyData[monthKey].total_consumption += item._sum.kWh || 0;
+                
+                monthlyConsumption[monthKey].readings.push({
+                    meterId: reading.meterId,
+                    readingDate: reading.readingDate,
+                    kWh: reading.kWh
+                });
+                monthlyConsumption[monthKey].count++;
             });
 
-            return Object.values(monthlyData).sort((a, b) => a.consumption_date.localeCompare(b.consumption_date));
+            // Calculate consumption for each month: (last reading - first reading) for each meter
+            const result = Object.values(monthlyConsumption).map(monthData => {
+                let totalConsumption = 0;
+                
+                // Group readings by meter for this month
+                const meterReadings = {};
+                monthData.readings.forEach(reading => {
+                    if (!meterReadings[reading.meterId]) {
+                        meterReadings[reading.meterId] = [];
+                    }
+                    meterReadings[reading.meterId].push(reading);
+                });
+                
+                // Calculate consumption for each meter: last reading - first reading
+                Object.values(meterReadings).forEach(meterMonthReadings => {
+                    if (meterMonthReadings.length > 1) {
+                        // Sort by reading time to get first and last
+                        meterMonthReadings.sort((a, b) => new Date(a.readingDate) - new Date(b.readingDate));
+                        
+                        const firstReading = meterMonthReadings[0];
+                        const lastReading = meterMonthReadings[meterMonthReadings.length - 1];
+                        
+                        // Calculate consumption: last - first
+                        const meterConsumption = (lastReading.kWh || 0) - (firstReading.kWh || 0);
+                        if (meterConsumption >= 0) { // Only add positive consumption
+                            totalConsumption += meterConsumption;
+                        }
+                    }
+                });
+                
+                return {
+                    consumption_date: monthData.consumption_date,
+                    count: monthData.count,
+                    total_consumption: totalConsumption
+                };
+            });
+
+            return result.sort((a, b) => a.consumption_date.localeCompare(b.consumption_date));
         } catch (error) {
             console.error('Error fetching DTR main graph analytics:', error);
             throw error;
@@ -1035,20 +1332,60 @@ class DTRDB {
     static async getIndividualDTRAlerts(dtrId) {
         try {
             const dtr = await DTRDB.resolveDTRId(dtrId);
-            const alerts = await prisma.dtr_faults.findMany({
+            
+            // Get all meters associated with this DTR
+            const meters = await prisma.meters.findMany({
+                where: { dtrId: dtr.id },
+                select: { id: true, meterNumber: true, serialNumber: true }
+            });
+            
+            if (meters.length === 0) {
+                return [];
+            }
+            
+            const meterIds = meters.map(m => m.id);
+            
+            const alerts = await prisma.escalation_notifications.findMany({
                 where: {
-                    dtrId: dtr.id
+                    meterid: { in: meterIds }
                 },
                 include: {
-                    dtrs: {
+                    meters: {
                         include: {
-                            locations: true
+                            dtrs: {
+                                include: {
+                                    locations: true
+                                }
+                            }
                         }
                     }
                 },
-                orderBy: { createdAt: 'desc' }
+                orderBy: { createdat: 'desc' }
             });
-            return alerts;
+            
+            const mappedAlerts = alerts.map(alert => ({
+                id: alert.id,
+                meterId: alert.meterid,
+                type: alert.type,
+                level: alert.level,
+                message: alert.message,
+                status: alert.status,
+                createdAt: alert.createdat,
+                scheduledFor: alert.scheduledfor,
+                sentAt: alert.sentat,
+                resolvedAt: alert.resolvedat,
+                dtrNumber: alert.dtrnumber,
+                meterNumber: alert.meternumber,
+                abnormalityType: alert.abnormalitytype,
+                isResolved: alert.resolvedat !== null,
+                isSent: alert.sentat !== null,
+                escalationAge: alert.resolvedat ? 
+                    Math.floor((new Date(alert.resolvedat) - new Date(alert.createdat)) / (1000 * 60 * 60 * 24)) : 
+                    Math.floor((new Date() - new Date(alert.createdat)) / (1000 * 60 * 60 * 24)),
+                meters: alert.meters
+            }));
+            
+            return mappedAlerts;
         } catch (error) {
             console.error('Error fetching individual DTR alerts:', error);
             throw error;

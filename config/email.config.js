@@ -16,7 +16,7 @@ export const emailConfig = {
     email: {
         from: process.env.EMAIL_FROM || process.env.SMTP_USER,
         appName: process.env.APP_NAME || 'Admin Module',
-        frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
+        frontendUrl: process.env.FRONTEND_URL || 'http://localhost:1700',
     },
 
     // Recipient Configuration
