@@ -134,12 +134,19 @@ export const getFeedersForDTR = async (req, res) => {
             lastCommunication: feedersData.dtr.lastCommunication || null
         };
 
+        // Get location hierarchy for the first feeder (assuming all feeders are in same location)
+        let locationHierarchy = null;
+        if (feedersData.feeders.length > 0 && feedersData.feeders[0].location) {
+            locationHierarchy = feedersData.feeders[0].location.hierarchy || [];
+        }
+
         res.json({
             success: true,
             data: {
                 dtr: mappedDTR,
                 feeders: mappedFeeders,
-                totalFeeders: mappedFeeders.length
+                totalFeeders: mappedFeeders.length,
+                locationHierarchy: locationHierarchy || []
             },
             message: 'Feeders fetched successfully'
         });
@@ -170,12 +177,26 @@ export const getDTRAlerts = async (req, res) => {
                     }
                 }
             } : {},
-            include: {
+            select: {
+                id: true,
+                type: true,
+                abnormalitytype: true,
+                createdat: true,
+                status: true,
+                dtrnumber: true,
+                meternumber: true,
                 meters: {
-                    include: {
+                    select: {
+                        meterNumber: true,
+                        serialNumber: true,
                         dtrs: {
-                            include: {
-                                locations: true
+                            select: {
+                                dtrNumber: true,
+                                locations: {
+                                    select: {
+                                        name: true
+                                    }
+                                }
                             }
                         }
                     }
@@ -185,10 +206,12 @@ export const getDTRAlerts = async (req, res) => {
             take: 10 // Limit to latest 10 alerts for dashboard
         });
         
+
+        
         // Map alerts to match frontend table columns exactly
         const mappedAlerts = alerts.map(alert => ({
             alertId: alert.id || 'NA',
-            type: alert.type || alert.abnormalitytype || 'NA',
+            type: alert.abnormalitytype || alert.type || 'NA', // Prioritize abnormalitytype for actual alert names
             feederName: alert.meternumber || alert.meters?.meterNumber || alert.meters?.serialNumber || 'N/A',
             occuredOn: alert.createdat ? new Date(alert.createdat).toLocaleString() : 'NA',
             status: alert.status || 'NA',
