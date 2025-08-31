@@ -241,8 +241,6 @@ class ConsumerDB {
 
     static async addConsumer(consumerData) {
         try {
-            console.log('🗄️ ConsumerDB.addConsumer: Creating new consumer...');
-            
             // Validate required fields
             const requiredFields = [
                 'consumerNumber', 'name', 'primaryPhone', 'idType', 'idNumber',
@@ -373,9 +371,6 @@ class ConsumerDB {
                 }
             });
 
-            console.log('🗄️ ConsumerDB.addConsumer: Consumer created successfully');
-            console.log('🗄️ ConsumerDB.addConsumer: Consumer ID:', newConsumer.id);
-            
             return newConsumer;
         } catch (error) {
             console.error('❌ ConsumerDB.addConsumer: Database error:', error);

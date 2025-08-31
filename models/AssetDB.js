@@ -13,9 +13,7 @@ class AssetDB {
                 orderBy: { createdAt: 'desc' }
             });
 
-            console.log(`Total locations found: ${allLocations.length}`);
             if (userLocationId) {
-                console.log(`User location ID: ${userLocationId}`);
             }
 
             // Create a map for quick lookup
@@ -48,21 +46,17 @@ class AssetDB {
                 }
             });
 
-            console.log(`Root locations found: ${rootLocations.length}`);
             
             // If user location filtering is requested, filter the results
             if (userLocationId) {
                 const userLocation = allLocations.find(loc => loc.id === userLocationId);
                 if (userLocation) {
-                    console.log(`User location found: ${userLocation.name}`);
                     // Find the user's location in the hierarchy and return only that branch
                     const userLocationInHierarchy = this.findLocationInHierarchy(rootLocations, userLocationId);
                     if (userLocationInHierarchy) {
-                        console.log(`Returning filtered hierarchy for user location: ${userLocation.name}`);
                         return [userLocationInHierarchy];
                     }
                 } else {
-                    console.log(`User location ${userLocationId} not found, returning all assets`);
                 }
             }
 
@@ -89,7 +83,6 @@ class AssetDB {
 
     static async addAsset(data) {
         try {
-            console.log('AssetDB.addAsset called with data:', data);
             
             let parentLocationId = null;
 
@@ -101,7 +94,6 @@ class AssetDB {
             // If locationId is provided (from user's location), use it as parent
             if (data.locationId) {
                 parentLocationId = data.locationId;
-                console.log('Using user locationId as parent:', parentLocationId);
             } else if (data.parent_location && data.parent_location !== '0') {
                 const parentLocation = await prisma.locations.findFirst({
                     where: {
@@ -116,18 +108,14 @@ class AssetDB {
                 }
 
                 parentLocationId = parentLocation.id;
-                console.log('Found parent location:', parentLocationId);
             }
 
-            console.log('Final parentLocationId:', parentLocationId);
 
             // If only location_type_name is provided
             if (
                 data.location_type_name &&
                 (!data.location_names || data.location_names.length === 0)
             ) {
-                console.log('Creating only location type:', data.location_type_name);
-                
                 const existingLocationType = await prisma.location_types.findFirst({
                     where: {
                         name: data.location_type_name
@@ -135,7 +123,6 @@ class AssetDB {
                 });
 
                 if (existingLocationType) {
-                    console.log('Location type already exists:', existingLocationType.id);
                     return {
                         status: 'warning',
                         message: 'Location type already exists',
@@ -150,8 +137,6 @@ class AssetDB {
                         name: data.location_type_name
                     }
                 });
-
-                console.log('Created new location type:', newLocationType.id);
                 return {
                     status: 'success',
                     message: 'Location type added successfully',
@@ -162,8 +147,6 @@ class AssetDB {
 
             // Handle case with location_names
             if (data.location_names && data.location_names.length > 0) {
-                console.log('Processing location names:', data.location_names);
-                
                 if (!data.location_type_name) {
                     throw new Error(
                         'location_type_name is required when inserting location names'
@@ -180,7 +163,6 @@ class AssetDB {
                 });
 
                 if (!existingLocationType) {
-                    console.log('Creating new location type:', data.location_type_name);
                     // Create new location type
                     const newLocationType = await prisma.location_types.create({
                         data: {
@@ -188,10 +170,8 @@ class AssetDB {
                         }
                     });
                     locationTypeId = newLocationType.id;
-                    console.log('Created location type with ID:', locationTypeId);
                 } else {
                     locationTypeId = existingLocationType.id;
-                    console.log('Using existing location type ID:', locationTypeId);
                 }
 
                 if (locationTypeId === null) {
@@ -202,8 +182,6 @@ class AssetDB {
 
                 const results = [];
                 for (const locationName of data.location_names) {
-                    console.log('Processing location name:', locationName);
-                    
                     // Check if location name already exists
                     const existingLocation = await prisma.locations.findFirst({
                         where: {
@@ -214,7 +192,6 @@ class AssetDB {
                     });
 
                     if (existingLocation) {
-                        console.log('Location already exists:', existingLocation.id);
                         results.push({
                             name: locationName,
                             status: 'warning',
@@ -224,7 +201,6 @@ class AssetDB {
                         continue;
                     }
 
-                    console.log('Creating new location:', locationName);
                     // Insert new location
                     const newLocation = await prisma.locations.create({
                         data: {
@@ -236,7 +212,6 @@ class AssetDB {
                         }
                     });
 
-                    console.log('Successfully created location:', newLocation.id);
                     results.push({
                         name: locationName,
                         status: 'success',
@@ -244,8 +219,6 @@ class AssetDB {
                         location_id: newLocation.id,
                     });
                 }
-
-                console.log('All locations processed. Results:', results);
                 return {
                     status: 'success',
                     message: 'Locations and location type processed',

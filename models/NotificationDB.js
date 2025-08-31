@@ -18,7 +18,6 @@ class NotificationDB {
                 }
             });
 
-            console.log(`✅ [NOTIFICATION-DB] Notification created: ${notification.id}`);
             return notification;
         } catch (error) {
             console.error('NotificationDB.createNotification: Database error:', error);
