@@ -884,3 +884,185 @@ export const getUnderloadedDTRs = async (req, res) => {
     }
 };
 
+export const searchDTRs = async (req, res) => {
+    try {
+        const { query } = req.query;
+        
+        if (!query || query.length < 2) {
+            return res.status(400).json({
+                success: false,
+                message: 'Search query must be at least 2 characters long'
+            });
+        }
+
+        const searchResults = await DTRDB.searchDTRs(query);
+        
+        res.json({
+            success: true,
+            data: searchResults,
+            message: searchResults.length > 0 ? 'Search results found' : 'No results found'
+        });
+        
+    } catch (error) {
+        console.error('searchDTRs: Error searching DTRs:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to search DTRs',
+            error: error.message
+        });
+    }
+};
+
+export const getLTSideFuseBlownData = async (req, res) => {
+    try {
+        const { page, pageSize, search, locationId } = req.query;
+        const userLocationId = req.user?.locationId;
+        const effectiveLocationId = userLocationId || (locationId ? parseInt(locationId) : undefined);
+
+        const result = await DTRDB.getLTSideFuseBlownData({
+            page: page ? parseInt(page) : 1,
+            pageSize: pageSize ? parseInt(pageSize) : 10,
+            search: search || '',
+            locationId: effectiveLocationId
+        });
+
+        res.json({
+            success: true,
+            data: result.data,
+            pagination: {
+                currentPage: result.page,
+                totalPages: Math.ceil(result.total / result.pageSize),
+                totalCount: result.total,
+                limit: result.pageSize,
+                hasNextPage: result.page < Math.ceil(result.total / result.pageSize),
+                hasPrevPage: result.page > 1
+            },
+            message: 'LT Side Fuse Blown data fetched successfully'
+        });
+
+    } catch (error) {
+        console.error('Error fetching LT Side Fuse Blown data:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch LT Side Fuse Blown data',
+            error: error.message
+        });
+    }
+};
+
+export const getUnbalancedDTRsData = async (req, res) => {
+    try {
+        const { page, pageSize, search, locationId } = req.query;
+        const userLocationId = req.user?.locationId;
+        const effectiveLocationId = userLocationId || (locationId ? parseInt(locationId) : undefined);
+
+        const result = await DTRDB.getUnbalancedDTRsData({
+            page: page ? parseInt(page) : 1,
+            pageSize: pageSize ? parseInt(pageSize) : 10,
+            search: search || '',
+            locationId: effectiveLocationId
+        });
+
+        res.json({
+            success: true,
+            data: result.data,
+            pagination: {
+                currentPage: result.page,
+                totalPages: Math.ceil(result.total / result.pageSize),
+                totalCount: result.total,
+                limit: result.pageSize,
+                hasNextPage: result.page < Math.ceil(result.total / result.pageSize),
+                hasPrevPage: result.page > 1
+            },
+            message: 'Unbalanced DTRs data fetched successfully'
+        });
+
+    } catch (error) {
+        console.error('Error fetching Unbalanced DTRs data:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch Unbalanced DTRs data',
+            error: error.message
+        });
+    }
+};
+
+export const getPowerFailureFeedersData = async (req, res) => {
+    try {
+        const { page, pageSize, search, locationId } = req.query;
+        const userLocationId = req.user?.locationId;
+        const effectiveLocationId = userLocationId || (locationId ? parseInt(locationId) : undefined);
+
+        const result = await DTRDB.getPowerFailureFeedersData({
+            page: page ? parseInt(page) : 1,
+            pageSize: pageSize ? parseInt(pageSize) : 10,
+            search: search || '',
+            locationId: effectiveLocationId
+        });
+
+        res.json({
+            success: true,
+            data: result.data,
+            pagination: {
+                currentPage: result.page,
+                totalPages: Math.ceil(result.total / result.pageSize),
+                totalCount: result.total,
+                limit: result.pageSize,
+                hasNextPage: result.page < Math.ceil(result.total / result.pageSize),
+                hasPrevPage: result.page > 1
+            },
+            message: 'Power Failure Feeders data fetched successfully'
+        });
+
+    } catch (error) {
+        console.error('Error fetching Power Failure Feeders data:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch Power Failure Feeders data',
+            error: error.message
+        });
+    }
+};
+
+export const getHTSideFuseBlownData = async (req, res) => {
+    try {
+        const { page, pageSize, search, locationId } = req.query;
+        
+        // Get user's location from req.user (populated by middleware)
+        const userLocationId = req.user?.locationId;
+        
+        // If user has a specific location, use it; otherwise use query locationId or undefined
+        const effectiveLocationId = userLocationId || (locationId ? parseInt(locationId) : undefined);
+        
+        const result = await DTRDB.getHTSideFuseBlownData({
+            page: page ? parseInt(page) : 1,
+            pageSize: pageSize ? parseInt(pageSize) : 10,
+            search: search || '',
+            locationId: effectiveLocationId
+        });
+
+        res.json({
+            success: true,
+            data: result.data,
+            pagination: {
+                currentPage: result.page,
+                totalPages: Math.ceil(result.total / result.pageSize),
+                totalCount: result.total,
+                limit: result.pageSize,
+                hasNextPage: result.page < Math.ceil(result.total / result.pageSize),
+                hasPrevPage: result.page > 1
+            },
+            message: 'HT Side Fuse Blown data fetched successfully',
+            userLocation: userLocationId,
+            filteredByLocation: !!userLocationId
+        });
+    } catch (error) {
+        console.error('Error fetching HT Side Fuse Blown data:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch HT Side Fuse Blown data',
+            error: error.message
+        });
+    }
+};
+
