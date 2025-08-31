@@ -1,5 +1,5 @@
 import express from 'express';
-import { getDTRTable, getFeedersForDTR, getDTRAlerts, getDTRAlertsTrends, getDTRStats, getConsumptionStats, getFeederStats, getInstantaneousStats, getConsolidatedDTRStats, getDTRConsumptionAnalytics, getIndividualDTRAlerts, getKVAMetrics, getDTRFilterOptions } from '../controllers/dtrController.js';
+import { getDTRTable, getFeedersForDTR, getDTRAlerts, getDTRAlertsTrends, getDTRStats, getConsumptionStats, getFeederStats, getInstantaneousStats, getConsolidatedDTRStats, getDTRConsumptionAnalytics, getIndividualDTRAlerts, getKVAMetrics, getDTRFilterOptions, getMeterStatus } from '../controllers/dtrController.js';
 import { populateUserFromCookies } from '../utils/cookieUtils.js';
 
 const router = express.Router();
@@ -8,6 +8,7 @@ const router = express.Router();
 router.use(populateUserFromCookies);
 
 router.get('/', getDTRTable);
+router.get('/meter-status', getMeterStatus);
 // Specific routes must come BEFORE parameterized routes
 router.get('/filter-options', getDTRFilterOptions);
 router.get('/stats', getConsolidatedDTRStats);

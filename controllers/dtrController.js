@@ -523,3 +523,86 @@ export const getKVAMetrics = async (req, res) => {
     }
 };
 
+export const getMeterStatus = async (req, res) => {
+    try {        
+        // Get user's location from req.user (populated by middleware)
+        const userLocationId = req.user?.locationId;
+        
+        // Build where clause for location filtering
+        const whereClause = {};
+        if (userLocationId) {
+            whereClause.locationId = userLocationId;
+        }
+
+        // Get DTRs with their meter communication status
+        const dtrs = await DTRDB.getDTRTable({
+            page: 1,
+            pageSize: 1000, // Get all DTRs for communication status
+            locationId: userLocationId
+        });
+
+        // Calculate communication statistics
+        const totalDTRs = dtrs.total;
+        const connectedDTRs = dtrs.data.filter(dtr => 
+            dtr.lastCommunication && 
+            new Date(dtr.lastCommunication) > new Date(Date.now() - 24 * 60 * 60 * 1000) // Last 24 hours
+        ).length;
+        const disconnectedDTRs = totalDTRs - connectedDTRs;
+
+        // Get meter-specific communication data
+        const meterStats = {
+            totalMeters: 0,
+            communicatingMeters: 0,
+            nonCommunicatingMeters: 0,
+            lastUpdated: new Date().toISOString()
+        };
+
+        // Count meters associated with DTRs
+        for (const dtr of dtrs.data) {
+            meterStats.totalMeters += dtr.feedersCount || 0;
+            
+            // If DTR is communicating, assume its meters are too
+            if (dtr.lastCommunication && 
+                new Date(dtr.lastCommunication) > new Date(Date.now() - 24 * 60 * 60 * 1000)) {
+                meterStats.communicatingMeters += dtr.feedersCount || 0;
+            } else {
+                meterStats.nonCommunicatingMeters += dtr.feedersCount || 0;
+            }
+        }
+
+        // Format data to match frontend expectations
+        const responseData = [
+            { 
+                value: meterStats.communicatingMeters, 
+                name: "Communicating" 
+            },
+            { 
+                value: meterStats.nonCommunicatingMeters, 
+                name: "Non-Communicating" 
+            }
+        ];
+
+
+        res.json({
+            success: true,
+            data: responseData,
+            message: 'Meter communication status retrieved successfully',
+            userLocation: userLocationId,
+            filteredByLocation: !!userLocationId
+        });
+
+    } catch (error) {
+        console.error('❌ Error fetching meter status:', {
+            error: error.message,
+            stack: error.stack,
+            timestamp: getDateTime(),
+        });
+
+        res.status(500).json({
+            success: false,
+            message: 'An error occurred while fetching meter communication status',
+            error: error.message
+        });
+    }
+};
+
