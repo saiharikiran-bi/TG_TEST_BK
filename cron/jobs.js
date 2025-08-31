@@ -1,4 +1,4 @@
-import { escalateTickets } from './escalation.js';
+//import { escalateTickets } from './escalation.js';
 import { generateMonthlyBillsTask } from './billing.js';
 import { checkMeterAbnormalities } from './meterAbnormalityCheck.js';
 import cronHandler from '../utils/cronHandler.js';

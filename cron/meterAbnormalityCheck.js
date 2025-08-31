@@ -8,11 +8,109 @@ import {
     generateErrorSignature
 } from '../utils/abnormalityUtils.js';
 import EmailService from '../utils/emailService.js';
+import { escalationLevels } from './utils/escalationLevels.js';
+
 
 const prisma = new PrismaClient();
 
 // Store previous error states to prevent duplicate alerts (like TGNPDCL_Backend)
 const previousErrorStates = new Map();
+
+// Helper function to get all unique phone numbers from escalation levels
+const getAllEscalationPhoneNumbers = () => {
+    const phoneNumbers = new Set();
+    escalationLevels.forEach(level => {
+        level.contacts.forEach(contact => {
+            if (contact.phone) {
+                phoneNumbers.add(contact.phone);
+            }
+        });
+    });
+    return Array.from(phoneNumbers);
+};
+
+// Helper function to check if abnormality is still active for a meter
+const checkIfAbnormalityActive = async (meterId) => {
+    try {
+        // Get the latest reading for this meter
+        const latestReading = await prisma.meter_readings.findFirst({
+            where: { meterId: meterId },
+            orderBy: { readingDate: 'desc' }
+        });
+        
+        if (!latestReading) {
+            return false; // No reading means no abnormality
+        }
+        
+        // Analyze the reading for abnormalities
+        const abnormalities = analyzeMeterReadings(latestReading);
+        const hasAbnormalitiesDetected = hasAbnormalities(abnormalities);
+        
+        return hasAbnormalitiesDetected;
+    } catch (error) {
+        console.error(`❌ [CRON-METER] Error checking abnormality status for meter ${meterId}:`, error);
+        return false; // Assume resolved if error
+    }
+};
+
+// Store scheduled timeouts so we can cancel them if needed
+const scheduledNotifications = new Map();
+
+// Function to cancel scheduled notifications for a specific meter
+const cancelScheduledNotifications = (meterId) => {
+    let cancelledCount = 0;
+    
+    // Cancel all scheduled notifications for this meter
+    for (const [key, timeoutId] of scheduledNotifications.entries()) {
+        if (key.startsWith(`${meterId}-`)) {
+                            clearTimeout(timeoutId);
+                            scheduledNotifications.delete(key);
+                            cancelledCount++;
+        }
+    }
+    
+    if (cancelledCount > 0) {
+        console.log(`⏹️ [CRON-METER] Cancelled ${cancelledCount} scheduled notifications for meter ${meterId}`);
+    }
+};
+
+// Helper function to send SMS for a specific level
+const sendLevelNotification = async (notification, phoneNumbers, levelName) => {
+    try {
+        console.log(`📱 [CRON-METER] Sending ${levelName} SMS for meter ${notification.meterNumber}`);
+        
+        for (const phone of phoneNumbers) {
+            try {
+                await EmailService.sendSMS(
+                    phone,
+                    process.env.MSG_TEMPLATE_ID,
+                    {
+                        var: notification.dtrnumber,
+                        var1: notification.meternumber,
+                        var2: `${levelName}: ${notification.abnormalitytype || 'Unknown Abnormality'}`,
+                        var3: new Date().toLocaleString()
+                    }
+                );
+                console.log(`✅ [CRON-METER] ${levelName} SMS sent to ${phone}`);
+            } catch (smsError) {
+                console.error(`❌ [CRON-METER] Failed to send ${levelName} SMS to ${phone}:`, smsError);
+            }
+        }
+        
+        // Mark notification as sent
+        await prisma.escalation_notifications.update({
+            where: { id: notification.id },
+            data: { 
+                sentat: new Date(),
+                status: 'sent'
+            }
+        });
+        
+        console.log(`✅ [CRON-METER] ${levelName} notification marked as sent`);
+    } catch (error) {
+        console.error(`❌ [CRON-METER] Failed to send ${levelName} notification:`, error);
+    }
+};
 
 /**
  * Check meter readings for abnormalities and send alerts directly
@@ -120,24 +218,91 @@ export async function checkMeterAbnormalities() {
                     
                     if (previousSignature !== errorSignature) {
                         try {
-                            // Send zero value alert directly (like TGNPDCL_Backend)
-                            // This covers all abnormalities - no separate notification routes needed
-                            await EmailService.sendZeroValueAlert(
-                                meter.serialNumber,
-                                meterNumber,
-                                dtrNumber,
-                                abnormalities,
-                                powerData,
-                                convertToISTMail(latestReading.readingDate)
-                            );
+                            // Check if we already have active notifications for this meter
+                            const existingNotifications = await prisma.escalation_notifications.findMany({
+                                where: {
+                                    meterid: meter.id,
+                                    type: 'meter_abnormality',
+                                    status: 'active',
+                                    resolvedat: null
+                                }
+                            });
+
+                            if (existingNotifications.length === 0) {
+                                // No active notifications, create new ones
+                                console.log(`📱 [CRON-METER] Creating new escalation notifications for meter ${meter.meterNumber}`);
+                                
+                                const abnormalityType = getAbnormalitySummary(abnormalities);
+                                const phoneNumbers = getAllEscalationPhoneNumbers();
+                                
+                                if (phoneNumbers && phoneNumbers.length > 0) {
+                                    // Create notification records for each level
+                                    const notificationPromises = escalationLevels.map(async (level) => {
+                                        const notification = await prisma.escalation_notifications.create({
+                                            data: {
+                                                meterid: meter.id,
+                                                type: 'meter_abnormality',
+                                                level: level.level,
+                                                message: `Level ${level.level}: ${abnormalityType} detected for DTR: ${dtrNumber}, Meter: ${meterNumber}`,
+                                                status: 'active',
+                                                createdat: new Date(),
+                                                scheduledfor: level.timeToEscalate > 0 
+                                                    ? new Date(Date.now() + (level.timeToEscalate * 60 * 1000))
+                                                    : new Date(),
+                                                dtrnumber: dtrNumber,
+                                                meternumber: meterNumber,
+                                                abnormalitytype: Array.isArray(abnormalityType) ? abnormalityType.join(', ') : abnormalityType
+                                            }
+                                        });
+                                        return notification;
+                                    });
+
+                                    const notifications = await Promise.all(notificationPromises);
+                                    console.log(`✅ [CRON-METER] Created ${notifications.length} notification records`);
+
+                                    // Send immediate Level 0 SMS
+                                    await sendLevelNotification(notifications[0], phoneNumbers, 'Level 0');
+                                    
+                                    // Schedule other levels
+                                    notifications.slice(1).forEach((notification, index) => {
+                                        const level = escalationLevels[index + 1];
+                                        if (level.timeToEscalate > 0) {
+                                            const delayMs = level.timeToEscalate * 60 * 1000;
+                                            const timeoutId = setTimeout(async () => {
+                                                // Check if abnormality is still active before sending
+                                                const isStillActive = await checkIfAbnormalityActive(meter.id);
+                                                if (isStillActive) {
+                                                    await sendLevelNotification(notification, phoneNumbers, `Level ${level.level}`);
+                                                } else {
+                                                    console.log(`⏭️ [CRON-METER] Abnormality resolved for meter ${meter.meterNumber} - skipping Level ${level.level}`);
+                                                    // Mark this notification as resolved
+                                                    await prisma.escalation_notifications.update({
+                                                        where: { id: notification.id },
+                                                        data: { 
+                                                            status: 'resolved',
+                                                            resolvedat: new Date()
+                                                        }
+                                                    });
+                                                }
+                                            }, delayMs);
+                                            
+                                            // Store the timeout ID so we can cancel it if needed
+                                            const key = `${meter.id}-${level.level}`;
+                                            scheduledNotifications.set(key, timeoutId);
+                                        }
+                                    });
+                                }
+                            } else {
+                                console.log(`⏭️ [CRON-METER] Skipping - ${existingNotifications.length} active notifications already exist for meter ${meter.meterNumber}`);
+                            }
 
                             // Update the error state signature
                             previousErrorStates.set(meter.serialNumber, errorSignature);
                             
                             alertsSent++;
-                            console.log(`✅ [CRON-METER] Alert sent for meter ${meter.meterNumber}`);
+                            console.log(`✅ [CRON-METER] Escalation notifications handled for meter ${meter.meterNumber}`);
                         } catch (alertError) {
-                            console.error(`❌ [CRON-METER] Failed to send alert for meter ${meter.meterNumber}:`, alertError);
+                            console.error(`❌ [CRON-METER] Failed to handle escalation notifications for meter ${meter.meterNumber}:`, alertError);
                         }
                     } else {
                         console.log(`⏭️ [CRON-METER] Skipping duplicate alert for meter ${meter.meterNumber}`);
@@ -147,6 +312,28 @@ export async function checkMeterAbnormalities() {
                     if (previousErrorStates.has(meter.serialNumber)) {
                         previousErrorStates.delete(meter.serialNumber);
                         console.log(`🔄 [CRON-METER] Cleared error state for meter ${meter.serialNumber} - no abnormalities detected`);
+                        
+                        // Mark all active notifications as resolved
+                        try {
+                            await prisma.escalation_notifications.updateMany({
+                                where: {
+                                    meterid: meter.id,
+                                    type: 'meter_abnormality',
+                                    status: { in: ['active', 'sent'] },
+                                    resolvedat: null
+                                },
+                                data: {
+                                    status: 'resolved',
+                                    resolvedat: new Date()
+                                }
+                            });
+                            console.log(`✅ [CRON-METER] Marked all notifications as resolved for meter ${meter.meterNumber}`);
+                            
+                            // Cancel all scheduled notifications for this meter
+                            cancelScheduledNotifications(meter.id);
+                        } catch (resolveError) {
+                            console.error(`❌ [CRON-METER] Failed to resolve notifications for meter ${meter.meterNumber}:`, resolveError);
+                        }
                     }
                 }
 
