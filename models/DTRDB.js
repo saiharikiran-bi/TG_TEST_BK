@@ -1554,7 +1554,7 @@ class DTRDB {
                 const globalIndex = skip + index + 1;
                 const lastReading = meter.meter_readings?.[0];
                 let lastCommunication = null;
-                let communicationStatus = 'Non-Communicating';
+                let communicationStatus = 'Inactive';
 
                 if (lastReading?.readingDate) {
                     // Convert to IST timezone for consistent display
@@ -1569,9 +1569,9 @@ class DTRDB {
                     const localDate = new Date(year, month, day, hour, minute, second);
                     lastCommunication = localDate.toISOString();
 
-                    // Determine communication status (communicating if reading is within last 24 hours)
+                    // Determine communication status (active if reading is within last 24 hours)
                     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-                    communicationStatus = localDate > oneDayAgo ? 'Communicating' : 'Non-Communicating';
+                    communicationStatus = localDate > oneDayAgo ? 'Active' : 'Inactive';
                 }
 
                 return {

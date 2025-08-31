@@ -267,5 +267,192 @@ export const getDtrDetails = async (req, res) => {
             error: error.message
         });
     }
+};
+
+export const getTicketActivityLog = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const numericId = Number(id);
+        
+        if (!Number.isFinite(numericId) || numericId <= 0) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Invalid ticket id' 
+            });
+        }
+        
+        // For now, return empty activity log - you can implement actual activity tracking later
+        const activityLog = [
+            {
+                id: 1,
+                description: 'Ticket created',
+                timestamp: new Date().toISOString(),
+                status: 'OPEN',
+                author: 'System'
+            }
+        ];
+        
+        res.json({
+            success: true,
+            data: activityLog
+        });
+        
+    } catch (error) {
+        console.error('getTicketActivityLog: Error fetching activity log:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch ticket activity log',
+            error: error.message
+        });
+    }
+};
+
+export const updateTicket = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const numericId = Number(id);
+        
+        if (!Number.isFinite(numericId) || numericId <= 0) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Invalid ticket id' 
+            });
+        }
+        
+        const updatedTicket = await TicketDB.updateTicket(numericId, req.body);
+        
+        if (!updatedTicket) {
+            return res.status(404).json({
+                success: false,
+                message: 'Ticket not found'
+            });
+        }
+        
+        res.json({
+            success: true,
+            data: updatedTicket,
+            message: 'Ticket updated successfully'
+        });
+        
+    } catch (error) {
+        console.error('updateTicket: Error updating ticket:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to update ticket',
+            error: error.message
+        });
+    }
+};
+
+export const updateTicketStatus = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { status } = req.body;
+        const numericId = Number(id);
+        
+        if (!Number.isFinite(numericId) || numericId <= 0) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Invalid ticket id' 
+            });
+        }
+        
+        const updatedTicket = await TicketDB.updateTicketStatus(numericId, status);
+        
+        if (!updatedTicket) {
+            return res.status(404).json({
+                success: false,
+                message: 'Ticket not found'
+            });
+        }
+        
+        res.json({
+            success: true,
+            data: updatedTicket,
+            message: 'Ticket status updated successfully'
+        });
+        
+    } catch (error) {
+        console.error('updateTicketStatus: Error updating ticket status:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to update ticket status',
+            error: error.message
+        });
+    }
+};
+
+export const assignTicket = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { assignedToId } = req.body;
+        const numericId = Number(id);
+        
+        if (!Number.isFinite(numericId) || numericId <= 0) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Invalid ticket id' 
+            });
+        }
+        
+        const updatedTicket = await TicketDB.assignTicket(numericId, assignedToId);
+        
+        if (!updatedTicket) {
+            return res.status(404).json({
+                success: false,
+                message: 'Ticket not found'
+            });
+        }
+        
+        res.json({
+            success: true,
+            data: updatedTicket,
+            message: 'Ticket assigned successfully'
+        });
+        
+    } catch (error) {
+        console.error('assignTicket: Error assigning ticket:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to assign ticket',
+            error: error.message
+        });
+    }
+};
+
+export const deleteTicket = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const numericId = Number(id);
+        
+        if (!Number.isFinite(numericId) || numericId <= 0) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Invalid ticket id' 
+            });
+        }
+        
+        const deletedTicket = await TicketDB.deleteTicket(numericId);
+        
+        if (!deletedTicket) {
+            return res.status(404).json({
+                success: false,
+                message: 'Ticket not found'
+            });
+        }
+        
+        res.json({
+            success: true,
+            message: 'Ticket deleted successfully'
+        });
+        
+    } catch (error) {
+        console.error('deleteTicket: Error deleting ticket:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to delete ticket',
+            error: error.message
+        });
+    }
 }; 
 
