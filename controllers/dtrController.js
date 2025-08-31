@@ -622,15 +622,15 @@ export const getMeterStatus = async (req, res) => {
             }
         }
 
-        // Format data to match frontend expectations
+                // Format data to match frontend expectations
         const responseData = [
-            { 
+            {
                 value: meterStats.communicatingMeters, 
-                name: "Communicating" 
+                name: "Active" 
             },
             { 
                 value: meterStats.nonCommunicatingMeters, 
-                name: "Non-Communicating" 
+                name: "Inactive" 
             }
         ];
 
@@ -675,6 +675,48 @@ export const getFilterOptions = async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Failed to fetch filter options',
+            error: error.message
+        });
+    }
+};
+
+export const getAllMetersData = async (req, res) => {
+    try {
+        const { page, pageSize, search, locationId } = req.query;
+        
+        // Get user's location from req.user (populated by middleware)
+        const userLocationId = req.user?.locationId;
+        
+        // If user has a specific location, use it; otherwise use query locationId or undefined
+        const effectiveLocationId = userLocationId || (locationId ? parseInt(locationId) : undefined);
+        
+        const result = await DTRDB.getAllMetersData({
+            page: page ? parseInt(page) : 1,
+            pageSize: pageSize ? parseInt(pageSize) : 20,
+            search: search || '',
+            locationId: effectiveLocationId
+        });
+
+        res.json({
+            success: true,
+            data: result.data,
+            pagination: {
+                currentPage: result.page,
+                totalPages: result.totalPages,
+                totalCount: result.total,
+                limit: result.pageSize,
+                hasNextPage: result.page < result.totalPages,
+                hasPrevPage: result.page > 1
+            },
+            message: 'All meters data fetched successfully',
+            userLocation: userLocationId,
+            filteredByLocation: !!userLocationId
+        });
+    } catch (error) {
+        console.error('Error fetching all meters data:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch all meters data',
             error: error.message
         });
     }
