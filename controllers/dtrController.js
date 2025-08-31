@@ -1,5 +1,6 @@
 import DTRDB from '../models/DTRDB.js';
 import { getDateTime, getDateInYMDFormat, getDateInMYFormat, fillMissingDatesDyno } from '../utils/utils.js';
+import LocationDB from '../models/LocationDB.js';
 
 export const getDTRTable = async (req, res) => {
     try {
@@ -147,7 +148,6 @@ export const getDTRAlerts = async (req, res) => {
 
 export const getDTRAlertsTrends = async (req, res) => {
     try {
-        // Get user's location from req.user (populated by middleware)
         const userLocationId = req.user?.locationId;
         
         // Only pass locationId if it's not null/undefined (null = show all data)
@@ -480,6 +480,31 @@ export const getKVAMetrics = async (req, res) => {
             status: 'error',
             message: 'An error occurred while fetching DTR kVA metrics',
             errorId: error.code || 'INTERNAL_SERVER_ERROR',
+        });
+    }
+};
+
+export const getFilterOptions = async (req, res) => {
+    try {
+        const { parentId, locationTypeId } = req.query; 
+        console.log('parentId');
+        console.log(parentId);
+        console.log(locationTypeId);
+        const locationDB = new LocationDB()  
+        const locations = await locationDB.getFilterOptions(parentId, locationTypeId);
+        console.log('locationssss', locations);
+        
+        res.json({
+            success: true,
+            data: locations,
+            message: 'Filter options fetched successfully'
+        });
+    } catch (error) {
+        console.error('Error fetching filter options:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch filter options',
+            error: error.message
         });
     }
 };
