@@ -162,13 +162,10 @@ export const getFeedersForDTR = async (req, res) => {
 
 export const getDTRAlerts = async (req, res) => {
     try {
-        // Get user's location from req.user (populated by middleware)
         const userLocationId = req.user?.locationId;
         
-        // Only pass locationId if it's not null/undefined (null = show all data)
         const locationIdForFilter = userLocationId || null;
         
-        // Get alerts from escalation_notifications table (same as DTRDetail and Feeders pages)
         const alerts = await prisma.escalation_notifications.findMany({
             where: locationIdForFilter ? {
                 meters: {
@@ -371,14 +368,14 @@ export const getInstantaneousStats = async (req, res) => {
 
 export const getConsolidatedDTRStats = async (req, res) => {
     try {
-        // Get user's location from req.user (populated by middleware)
+        console.log('req', req.query)
+        const { hierarchyId } = req.query;
         const userLocationId = req.user?.locationId;
-        
-        // Only pass locationId if it's not null/undefined (null = show all data)
+
+        const id = hierarchyId ? Number(hierarchyId) : null;
         const locationIdForFilter = userLocationId || null;
         
-        // Pass locationId to DTRDB method (null = all data, locationId = filtered data)
-        const stats = await DTRDB.getConsolidatedDTRStats(locationIdForFilter);
+        const stats = await DTRDB.getConsolidatedDTRStats(locationIdForFilter, id);
         
         res.json({
             success: true,
@@ -682,19 +679,19 @@ export const getFilterOptions = async (req, res) => {
 
 export const getAllMetersData = async (req, res) => {
     try {
-        const { page, pageSize, search, locationId } = req.query;
+        const { page, pageSize, search, locationId,hierarchyId } = req.query;
         
         // Get user's location from req.user (populated by middleware)
         const userLocationId = req.user?.locationId;
         
-        // If user has a specific location, use it; otherwise use query locationId or undefined
         const effectiveLocationId = userLocationId || (locationId ? parseInt(locationId) : undefined);
         
         const result = await DTRDB.getAllMetersData({
             page: page ? parseInt(page) : 1,
             pageSize: pageSize ? parseInt(pageSize) : 20,
             search: search || '',
-            locationId: effectiveLocationId
+            locationId: effectiveLocationId,
+            hierarchyId: hierarchyId ? parseInt(hierarchyId) : undefined
         });
 
         res.json({
