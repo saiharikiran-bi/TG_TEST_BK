@@ -189,28 +189,7 @@ export const getMeterById = async (req, res) => {
             });
         }
 
-        // Debug: Log what we're getting from database
-        console.log('🔍 Raw meter data from database:', {
-            hasMeterConfig: !!meter.meter_configurations,
-            hasBills: !!meter.bills,
-            hasCurrentTransformers: !!meter.current_transformers,
-            hasPotentialTransformers: !!meter.potential_transformers,
-            meterConfig: meter.meter_configurations,
-            bills: meter.bills,
-            currentTransformers: meter.current_transformers,
-            potentialTransformers: meter.potential_transformers
-        });
         
-        // Debug: Log meter readings specifically
-        console.log('📊 Meter readings debug:', {
-            hasMeterReadings: !!meter.meter_readings,
-            meterReadingsCount: meter.meter_readings?.length || 0,
-            sampleReadings: meter.meter_readings?.slice(0, 3).map(r => ({
-                date: r.readingDate,
-                kWh: r.kWh,
-                kW: r.kW
-            })) || []
-        });
 
         // Format the response for frontend
         const formattedMeter = {
@@ -268,11 +247,6 @@ export const getMeterById = async (req, res) => {
                 } : null
             };
 
-        // Debug: Log the final processed meterReadings
-        console.log('🎯 Final processed meterReadings:', {
-            count: formattedMeter.meterReadings.length,
-            data: formattedMeter.meterReadings
-        });
 
         res.json({
             success: true,

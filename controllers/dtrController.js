@@ -48,7 +48,6 @@ export const getDTRTable = async (req, res) => {
             status: status || undefined,
             locationId: effectiveLocationId
         });
-console.log(result);
         // Map the data to match frontend table columns exactly
         const mappedData = result.data.map((dtr, idx) => ({
             sNo: (result.page - 1) * result.pageSize + idx + 1,
@@ -100,7 +99,6 @@ export const getFeedersForDTR = async (req, res) => {
         }
         
         const feedersData = await DTRDB.getFeedersForDTR(dtrId);
-        console.log('feedersData',feedersData);
         
         // Map feeders data to match frontend expectations
         const mappedFeeders = feedersData.feeders.map((feeder, idx) => ({
@@ -305,7 +303,6 @@ export const getInstantaneousStats = async (req, res) => {
     try {
         const { dtrId } = req.params;
         const stats = await DTRDB.getInstantaneousStats(dtrId);
-        console.log(stats);
         res.json({
             success: true,
             data: stats,
@@ -454,9 +451,7 @@ export const getKVAMetrics = async (req, res) => {
         const { dtrId } = req.params;
         
         const kvaOnDaily = await DTRDB.getKVAMetrics(dtrId, 'daily');
-        console.log('kvaOnDaily', kvaOnDaily);
         const kvaOnMonthly = await DTRDB.getKVAMetrics(dtrId, 'monthly');
-        console.log('kvaOnMonthly', kvaOnMonthly);
         const { dailyxAxisData, dailysums } = kvaOnDaily.reduce(
             (acc, item) => {
                 acc.dailyxAxisData.push(item.kva_date);
@@ -611,7 +606,6 @@ export const getFilterOptions = async (req, res) => {
         const { parentId, locationTypeId } = req.query; 
         const locationDB = new LocationDB()  
         const locations = await locationDB.getFilterOptions(parentId, locationTypeId);
-        console.log('locationssss', locations);
         
         res.json({
             success: true,
