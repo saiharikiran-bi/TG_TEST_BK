@@ -1047,7 +1047,7 @@ class DTRDB {
             // Get all meters associated with this DTR
             const meters = await prisma.meters.findMany({
                 where: { dtrId: dtr.id },
-                select: { id: true }
+                select: { id: true, meterNumber: true, serialNumber: true }
             });
             
             if (meters.length === 0) {
@@ -1056,7 +1056,6 @@ class DTRDB {
             
             const meterIds = meters.map(m => m.id);
             
-            // Fetch alerts from escalation_notifications table for meters in this DTR
             const alerts = await prisma.escalation_notifications.findMany({
                 where: {
                     meterid: { in: meterIds }
@@ -1075,7 +1074,6 @@ class DTRDB {
                 orderBy: { createdat: 'desc' }
             });
             
-            // Map the response to ensure consistent field naming and add computed fields
             const mappedAlerts = alerts.map(alert => ({
                 id: alert.id,
                 meterId: alert.meterid,
@@ -1090,13 +1088,11 @@ class DTRDB {
                 dtrNumber: alert.dtrnumber,
                 meterNumber: alert.meternumber,
                 abnormalityType: alert.abnormalitytype,
-                // Add computed fields for better frontend consumption
                 isResolved: alert.resolvedat !== null,
                 isSent: alert.sentat !== null,
                 escalationAge: alert.resolvedat ? 
                     Math.floor((new Date(alert.resolvedat) - new Date(alert.createdat)) / (1000 * 60 * 60 * 24)) : 
                     Math.floor((new Date() - new Date(alert.createdat)) / (1000 * 60 * 60 * 24)),
-                // Include the related data
                 meters: alert.meters
             }));
             

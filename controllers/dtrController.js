@@ -426,15 +426,12 @@ export const getIndividualDTRAlerts = async (req, res) => {
     try {
         const { dtrId } = req.params;
         const alerts = await DTRDB.getIndividualDTRAlerts(dtrId);
-        console.log('alerts',alerts);
         
-        // Map alerts to match frontend table columns exactly
         const mappedAlerts = alerts.map(alert => ({
-            alert: alert.faultType || 'NA',
-            date: alert.createdAt ? new Date(alert.createdAt).toLocaleString() : 'NA',
-            status: alert.status || 'NA',
-            dtrNumber: alert.dtrs?.dtrNumber || 'NA',
-            location: alert.dtrs?.locations?.name || 'NA'
+            alertId: alert.id || 'NA',
+            type: alert.type || alert.abnormalityType || 'NA',
+            feederName: alert.meterNumber || alert.meters?.meterNumber || alert.meters?.serialNumber || 'N/A',
+            occuredOn: alert.createdAt ? new Date(alert.createdAt).toLocaleString() : 'NA'
         }));
 
         res.json({
