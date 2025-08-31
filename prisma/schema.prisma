@@ -343,6 +343,7 @@ model meters {
   locations              locations                @relation("metersToLocations", fields: [locationId], references: [id])
   potential_transformers potential_transformers[]
   tamper_events          tamper_events[]
+  escalation_notifications escalation_notifications[] @relation("metersToEscalationNotifications")
 
   @@index([dtrId])
 }
@@ -360,6 +361,23 @@ model notifications {
   createdAt  DateTime              @default(now())
   updatedAt  DateTime
   consumers  consumers             @relation(fields: [consumerId], references: [id])
+}
+
+model escalation_notifications {
+  id               Int      @id @default(autoincrement())
+  meterid          Int      @map("meterid")
+  type             String
+  level            Int
+  message          String
+  status           String   @default("active")
+  createdat        DateTime @default(now()) @map("createdat")
+  scheduledfor     DateTime @map("scheduledfor")
+  sentat           DateTime? @map("sentat")
+  resolvedat       DateTime? @map("resolvedat")
+  dtrnumber        String? @map("dtrnumber")
+  meternumber      String? @map("meternumber")
+  abnormalitytype  String? @map("abnormalitytype")
+  meters           meters   @relation("metersToEscalationNotifications", fields: [meterid], references: [id])
 }
 
 model payments {
