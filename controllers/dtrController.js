@@ -383,7 +383,8 @@ export const getFeederStats = async (req, res) => {
 export const getInstantaneousStats = async (req, res) => {
     try {
         const { dtrId } = req.params;
-        const stats = await DTRDB.getInstantaneousStats(dtrId);
+        const { feederId } = req.query;
+        const stats = await DTRDB.getInstantaneousStats(dtrId, feederId || null);
 
         res.json({
             success: true,
@@ -431,12 +432,10 @@ export const getConsolidatedDTRStats = async (req, res) => {
 export const getDTRConsumptionAnalytics = async (req, res) => {
     try {
         const { dtrId } = req.params;
-        
+        const { feederId } = req.query;
+        const consumptionOnDaily = await DTRDB.getDTRMainGraphAnalytics(dtrId, 'daily', feederId || null);
 
-        
-        const consumptionOnDaily = await DTRDB.getDTRMainGraphAnalytics(dtrId, 'daily');
-
-        const consumptionOnMonthly = await DTRDB.getDTRMainGraphAnalytics(dtrId, 'monthly');
+        const consumptionOnMonthly = await DTRDB.getDTRMainGraphAnalytics(dtrId, 'monthly', feederId || null);
 
         
         const { dailyxAxisData, dailysums } = consumptionOnDaily.reduce(
@@ -537,9 +536,9 @@ export const getIndividualDTRAlerts = async (req, res) => {
 export const getKVAMetrics = async (req, res) => {
     try {
         const { dtrId } = req.params;
-        
-        const kvaOnDaily = await DTRDB.getKVAMetrics(dtrId, 'daily');
-        const kvaOnMonthly = await DTRDB.getKVAMetrics(dtrId, 'monthly');
+        const { feederId } = req.query;
+        const kvaOnDaily = await DTRDB.getKVAMetrics(dtrId, 'daily', feederId || null);
+        const kvaOnMonthly = await DTRDB.getKVAMetrics(dtrId, 'monthly', feederId || null);
         const { dailyxAxisData, dailysums } = kvaOnDaily.reduce(
             (acc, item) => {
                 acc.dailyxAxisData.push(item.kva_date);

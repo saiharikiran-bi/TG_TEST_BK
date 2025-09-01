@@ -761,6 +761,8 @@ class DTRDB {
             let currentDayKwh = 0, currentDayKvah = 0, currentDayKw = 0, currentDayKva = 0;
             
             if (meterIds.length > 0) {
+                
+                // Get current date boundaries (start and end of current day)
                 const today = new Date();
                 const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
                 const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
@@ -828,6 +830,8 @@ class DTRDB {
                     ]
                 });
 
+
+
                 // Group current day readings by meter for consumption calculation
                 const currentDayMeterReadings = {};
                 currentDayReadings.forEach(reading => {
@@ -836,6 +840,8 @@ class DTRDB {
                     }
                     currentDayMeterReadings[reading.meterId].push(reading);
                 });
+
+
 
                 // Calculate current day consumption for each meter: last reading - first reading
                 Object.values(currentDayMeterReadings).forEach(meterDayReadings => {
@@ -851,6 +857,8 @@ class DTRDB {
                         const meterCurrentDayKvah = (lastReading.kVAh || 0) - (firstReading.kVAh || 0);
                         const meterCurrentDayKw = (lastReading.kW || 0) - (firstReading.kW || 0);
                         const meterCurrentDayKva = (lastReading.kVA || 0) - (firstReading.kVA || 0);
+                        
+
                         
                         // Only add positive consumption values
                         if (meterCurrentDayKwh >= 0) {
@@ -868,6 +876,28 @@ class DTRDB {
                     }
                 });
 
+                // Check if there are any readings at all
+                const totalReadings = await prisma.meter_readings.count({
+                    where: {
+                        meterId: { in: meterIds }
+                    }
+                });
+
+                // Check sample readings to see what kVA values exist
+                const sampleReadings = await prisma.meter_readings.findMany({
+                    where: {
+                        meterId: { in: meterIds }
+                    },
+                    select: {
+                        meterId: true,
+                        kVA: true,
+                        kVAh: true,
+                        kW: true,
+                        readingDate: true
+                    },
+                    take: 5
+                });
+
                 // For other metrics: Use simple aggregation (sum of all readings)
                 const agg = await prisma.meter_readings.aggregate({
                     where: {
@@ -880,12 +910,18 @@ class DTRDB {
                     }
                 });
 
+
+
                 totalKvah = agg._sum.kVAh || 0;
                 totalKw = agg._sum.kW || 0;
                 totalKva = agg._sum.kVA || 0;
+
+
             }
 
-        
+
+
+            // Format data according to the specified structure
             return {
                 row1: {
                     totalDtrs: totalDTRs,
@@ -1087,14 +1123,33 @@ class DTRDB {
         }
     }
 
-    static async getInstantaneousStats(dtrId) {
+    static async getInstantaneousStats(dtrId, meterIdentifier = null) {
         try {
             const dtr = await DTRDB.resolveDTRId(dtrId);
-            // Get all meters associated with this DTR
-            const meters = await prisma.meters.findMany({
-                where: { dtrId: dtr.id },
-                select: { id: true }
-            });
+            // Get meters associated with this DTR (optionally a single meter by meterIdentifier)
+            let meters = [];
+            if (meterIdentifier) {
+                // Try to find a single meter by serialNumber or meterNumber within this DTR
+                const meter = await prisma.meters.findFirst({
+                    where: {
+                        dtrId: dtr.id,
+                        OR: [
+                            { serialNumber: { equals: meterIdentifier, mode: 'insensitive' } },
+                            { meterNumber: { equals: meterIdentifier, mode: 'insensitive' } }
+                        ]
+                    },
+                    select: { id: true }
+                });
+                if (meter) {
+                    meters = [meter];
+                }
+            }
+            if (meters.length === 0) {
+                meters = await prisma.meters.findMany({
+                    where: { dtrId: dtr.id },
+                    select: { id: true }
+                });
+            }
             
             const meterIds = meters.map(m => m.id);
             
@@ -1517,14 +1572,32 @@ class DTRDB {
 
     
 
-    static async getDTRMainGraphAnalytics(dtrId, period) {
+    static async getDTRMainGraphAnalytics(dtrId, period, meterIdentifier = null) {
         try {
             const dtr = await DTRDB.resolveDTRId(dtrId);
             // Get all meters associated with this DTR
-            const meters = await prisma.meters.findMany({
-                where: { dtrId: dtr.id },
-                select: { id: true }
-            });
+            let meters = [];
+            if (meterIdentifier) {
+                const meter = await prisma.meters.findFirst({
+                    where: {
+                        dtrId: dtr.id,
+                        OR: [
+                            { serialNumber: { equals: meterIdentifier, mode: 'insensitive' } },
+                            { meterNumber: { equals: meterIdentifier, mode: 'insensitive' } }
+                        ]
+                    },
+                    select: { id: true }
+                });
+                if (meter) {
+                    meters = [meter];
+                }
+            }
+            if (meters.length === 0) {
+                meters = await prisma.meters.findMany({
+                    where: { dtrId: dtr.id },
+                    select: { id: true }
+                });
+            }
             
             const meterIds = meters.map(m => m.id);
             
@@ -1780,14 +1853,32 @@ class DTRDB {
         }
     }
 
-    static async getKVAMetrics(dtrId, period) {
+    static async getKVAMetrics(dtrId, period, meterIdentifier = null) {
         try {
             const dtr = await DTRDB.resolveDTRId(dtrId);
             // Get all meters associated with this DTR
-            const meters = await prisma.meters.findMany({
-                where: { dtrId: dtr.id },
-                select: { id: true }
-            });
+            let meters = [];
+            if (meterIdentifier) {
+                const meter = await prisma.meters.findFirst({
+                    where: {
+                        dtrId: dtr.id,
+                        OR: [
+                            { serialNumber: { equals: meterIdentifier, mode: 'insensitive' } },
+                            { meterNumber: { equals: meterIdentifier, mode: 'insensitive' } }
+                        ]
+                    },
+                    select: { id: true }
+                });
+                if (meter) {
+                    meters = [meter];
+                }
+            }
+            if (meters.length === 0) {
+                meters = await prisma.meters.findMany({
+                    where: { dtrId: dtr.id },
+                    select: { id: true }
+                });
+            }
             
             const meterIds = meters.map(m => m.id);
             
