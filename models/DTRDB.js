@@ -572,20 +572,106 @@ class DTRDB {
         }
     }
 
-    static async getConsolidatedDTRStats(locationId = null) {
+    static async getDTRsByHierarchyId(hierarchyId) {
         try {
-            // Build where clause for DTRs
+            // First, get all location IDs in the hierarchy (including the root and all children)
+            const getAllLocationIds = async (locationId) => {
+                const locationIds = [locationId];
+                
+                // Get all child locations recursively
+                const getChildLocations = async (parentId) => {
+                    const children = await prisma.locations.findMany({
+                        where: { parentId: parentId },
+                        select: { id: true }
+                    });
+                    
+                    for (const child of children) {
+                        locationIds.push(child.id);
+                        // Recursively get children of children
+                        await getChildLocations(child.id);
+                    }
+                };
+                
+                await getChildLocations(locationId);
+                return locationIds;
+            };
+
+            // Get all location IDs in the hierarchy
+            const locationIds = await getAllLocationIds(hierarchyId);
+            
+            // Get all DTRs from these locations
+            const dtrs = await prisma.dtrs.findMany({
+                where: {
+                    locationId: { in: locationIds }
+                },
+                select: { id: true }
+            });
+            
+            // Return array of DTR IDs
+            return dtrs.map(dtr => dtr.id);
+            
+        } catch (error) {
+            console.error('Error fetching DTRs by hierarchy ID:', error);
+            throw error;
+        }
+    }
+
+    static async getMetersByHierarchyId(hierarchyId) {
+        try {
+            // First, get all location IDs in the hierarchy (including the root and all children)
+            const getAllLocationIds = async (locationId) => {
+                const locationIds = [locationId];
+                
+                // Get all child locations recursively
+                const getChildLocations = async (parentId) => {
+                    const children = await prisma.locations.findMany({
+                        where: { parentId: parentId },
+                        select: { id: true }
+                    });
+                    
+                    for (const child of children) {
+                        locationIds.push(child.id);
+                        await getChildLocations(child.id);
+                    }
+                };
+                
+                await getChildLocations(locationId);
+                return locationIds;
+            };
+
+            // Get all location IDs in the hierarchy
+            const locationIds = await getAllLocationIds(hierarchyId);
+            
+            // Get all meters from these locations
+            const meters = await prisma.meters.findMany({
+                where: {
+                    locationId: { in: locationIds }
+                },
+                select: { id: true }
+            });
+            
+            // Return array of meter IDs
+            return meters.map(meter => meter.id);
+            
+        } catch (error) {
+            console.error('Error fetching meters by hierarchy ID:', error);
+            throw error;
+        }
+    }
+
+    static async getConsolidatedDTRStats(locationId = null, hierarchyid = null) {
+        try {
+
             const dtrWhere = {};
             if (locationId) {
                 dtrWhere.locationId = locationId;
+            } else if (hierarchyid) {
+                const dtrs = await DTRDB.getDTRsByHierarchyId(hierarchyid);
+                dtrWhere.id = { in: dtrs };
             }
-            
-            // Get basic DTR stats
             const totalDTRs = await prisma.dtrs.count({ where: dtrWhere });
-            
-            // Get DTR IDs for this location (if filtering)
             let dtrIds = null;
-            if (locationId) {
+            if (locationId || hierarchyid) {
                 const dtrsInLocation = await prisma.dtrs.findMany({
                     where: dtrWhere,
                     select: { id: true }
@@ -593,9 +679,8 @@ class DTRDB {
                 dtrIds = dtrsInLocation.map(d => d.id);
             }
             
-            // Get total LT feeders
             let totalLTFeeders;
-            if (locationId && dtrIds.length > 0) {
+            if (locationId || hierarchyid && dtrIds.length > 0) {
                 totalLTFeeders = await prisma.meters.count({
                     where: { dtrId: { in: dtrIds } }
                 });
@@ -616,9 +701,8 @@ class DTRDB {
                 } 
             });
 
-            // Get meter readings for calculations
             let meterIds;
-            if (locationId && dtrIds.length > 0) {
+            if (locationId || hierarchyid && dtrIds.length > 0) {
                 meterIds = (await prisma.meters.findMany({ 
                     where: { dtrId: { in: dtrIds } },
                     select: { id: true } 
@@ -637,7 +721,6 @@ class DTRDB {
             );
             const readingsArr = latestReadings.filter(Boolean);
 
-            // Calculate fuse blown stats
             const ltFuseBlown = readingsArr.filter(r =>
                 (r.currentR === 0 || r.currentY === 0 || r.currentB === 0)
             ).length;
@@ -650,7 +733,6 @@ class DTRDB {
 
             const totalFuseBlown = ltFuseBlown + htFuseBlown;
 
-            // Calculate overloaded/underloaded stats
             const overloadedDTRs = await prisma.dtrs.count({
                 where: {
                     loadPercentage: { gt: 90 },
@@ -673,10 +755,8 @@ class DTRDB {
                 r.powerFactor !== null && r.powerFactor === 0
             ).length;
 
-            // Calculate percentages
             const percent = (num, denom) => denom > 0 ? +(num / denom * 100).toFixed(2) : 0;
 
-            // Get consumption stats - kWh using consumption calculation (last - first reading), others as simple sum
             let totalKwh = 0, totalKvah = 0, totalKw = 0, totalKva = 0;
             let currentDayKwh = 0, currentDayKvah = 0, currentDayKw = 0, currentDayKva = 0;
             
@@ -687,7 +767,6 @@ class DTRDB {
                 const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
                 const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
                 
-                // For kWh: Get all readings to calculate consumption (last - first)
                 const allReadings = await prisma.meter_readings.findMany({
                     where: {
                         meterId: { in: meterIds }
@@ -703,7 +782,6 @@ class DTRDB {
                     ]
                 });
 
-                // Group readings by meter for kWh consumption calculation
                 const meterReadings = {};
                 allReadings.forEach(reading => {
                     if (!meterReadings[reading.meterId]) {
@@ -712,10 +790,8 @@ class DTRDB {
                     meterReadings[reading.meterId].push(reading);
                 });
 
-                // Calculate kWh consumption for each meter: last reading - first reading
                 Object.values(meterReadings).forEach(meterDayReadings => {
                     if (meterDayReadings.length > 1) {
-                        // Sort by reading time to get first and last
                         meterDayReadings.sort((a, b) => new Date(a.readingDate) - new Date(b.readingDate));
                         
                         const firstReading = meterDayReadings[0];
@@ -1117,8 +1193,18 @@ class DTRDB {
                 ? Math.max(...allReadings.map(r => r.kVA !== null ? r.kVA : 0))
                 : 0;
 
-            // Calculate cumulative KVAh across all meters (handle null values safely)
-            const cumulativeKVAh = allReadings.reduce((sum, r) => sum + (r.kVAh !== null ? r.kVAh : 0), 0);
+            // Get the latest kVAh value from each meter and sum them for total cumulative KVAh
+            const latestKVAhByMeter = {};
+            validReadings.forEach(reading => {
+                const meterId = reading.meterId;
+                if (!latestKVAhByMeter[meterId] || reading.readingDate > latestKVAhByMeter[meterId].readingDate) {
+                    latestKVAhByMeter[meterId] = reading;
+                }
+            });
+            
+            const cumulativeKVAh = Object.values(latestKVAhByMeter).reduce((sum, reading) => 
+                sum + (reading.kVAh !== null ? reading.kVAh : 0), 0
+            );
 
             // Calculate average phase-specific power factors
             const avgRphPF = validReadings.reduce((sum, r) => sum + (r.rphPowerFactor || r.averagePF || 0), 0) / validReadings.length;
@@ -1888,12 +1974,11 @@ class DTRDB {
         }
     }
 
-    static async getAllMetersData({ page = 1, pageSize = 20, search = '', locationId } = {}) {
+    static async getAllMetersData({ page = 1, pageSize = 20, search = '', locationId, hierarchyId} = {}) {
         try {
             const skip = (page - 1) * pageSize;
             const where = {};
 
-            // Add search functionality
             if (search) {
                 where.OR = [
                     { meterNumber: { contains: search, mode: 'insensitive' } },
@@ -1904,10 +1989,15 @@ class DTRDB {
                 ];
             }
 
-            // Filter by location if provided
             if (locationId) {
                 where.locationId = locationId;
+            } else if (hierarchyId) {
+                const meterIds = await DTRDB.getMetersByHierarchyId(hierarchyId);
+                where.id = { in: meterIds };
             }
+            console.log('locationId', locationId);
+            console.log('hierarchyId', hierarchyId);
+            console.log('where', where);
 
             // Get total count
             const total = await prisma.meters.count({ where });

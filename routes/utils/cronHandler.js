@@ -10,16 +10,13 @@ class CronJobHandler {
 
     async initialize() {
         if (this.isInitialized) {
-            console.log('⚠️ Cron handler already initialized');
             return;
         }
 
         try {
             await this.prisma.$connect();
-            console.log('✅ Cron handler database connection established');
             
             this.isInitialized = true;
-            console.log('✅ Cron job handler initialized successfully');
         } catch (error) {
             console.error('❌ Failed to initialize cron handler:', error);
             throw error;
@@ -28,16 +25,13 @@ class CronJobHandler {
 
     
     startAllJobs() {
-        console.log('🚀 Starting all cron jobs...');
         this.jobs.forEach((jobData, name) => {
             try {
                 jobData.job.start();
-                console.log(`▶️ Started: ${name}`);
             } catch (error) {
                 console.error(`❌ Failed to start job "${name}":`, error);
             }
         });
-        console.log(`✅ Started ${this.jobs.size} cron jobs`);
     }
 
     removeJob(name) {
@@ -46,7 +40,6 @@ class CronJobHandler {
                 const jobData = this.jobs.get(name);
                 jobData.job.stop();
                 this.jobs.delete(name);
-                console.log(`🛑 Removed cron job: ${name}`);
             } catch (error) {
                 console.error(`❌ Failed to remove job "${name}":`, error);
             }
@@ -81,9 +74,7 @@ class CronJobHandler {
                 schedule,
                 async () => {
                     try {
-                        console.log(`🕐 Executing cron job: ${name}`);
                         await task(this.prisma);
-                        console.log(`✅ Cron job "${name}" completed successfully`);
                     } catch (error) {
                         console.error(`❌ Cron job "${name}" failed:`, error);
                         
@@ -106,7 +97,6 @@ class CronJobHandler {
                 nextRun: this.getNextRunTime(job)
             });
 
-            console.log(`📅 Added cron job: ${name} (${schedule})`);
             return job;
         } catch (error) {
             console.error(`❌ Failed to create cron job "${name}":`, error);

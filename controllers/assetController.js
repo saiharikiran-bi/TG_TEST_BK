@@ -31,9 +31,7 @@ export const addAsset = async (req, res) => {
         if (userLocationId) {
             assetData.locationId = userLocationId;
         }
-        
-        console.log('Adding asset with data:', assetData);
-        
+                
         const result = await AssetDB.addAsset(assetData);
         
         // Return appropriate response based on result status

@@ -18,7 +18,6 @@ export function socketAuthMiddleware(socket, next) {
         socket.token = token;
         socket.userId = socket.handshake.auth.userId;
         
-        console.log(`🔐 Socket authenticated: ${socket.id} for user: ${socket.userId}`);
         next();
     } catch (error) {
         console.error(`❌ Socket authentication failed: ${error.message}`);
@@ -33,7 +32,6 @@ export function socketAuthMiddleware(socket, next) {
 export function joinUserRoom(socket) {
     if (socket.userId) {
         socket.join(`user_${socket.userId}`);
-        console.log(`👤 User ${socket.userId} joined room: user_${socket.userId}`);
     }
 }
 
@@ -42,10 +40,8 @@ export function joinUserRoom(socket) {
  * @param {Object} socket - Socket instance
  */
 export function handleDisconnect(socket) {
-    console.log(`🔌 Socket disconnected: ${socket.id}`);
     
     if (socket.userId) {
-        console.log(`👤 User ${socket.userId} disconnected`);
     }
 }
 

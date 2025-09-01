@@ -13,9 +13,7 @@ async function ensureMeterReadingColumns() {
   `;
 
   try {
-    console.log('Applying meter_readings column fixes...');
     await prisma.$executeRawUnsafe(sql);
-    console.log('Done.');
   } catch (error) {
     console.error('Failed to apply column fixes:', error);
     process.exitCode = 1;

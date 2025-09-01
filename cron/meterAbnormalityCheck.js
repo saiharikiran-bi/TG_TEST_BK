@@ -70,7 +70,6 @@ const cancelScheduledNotifications = (meterId) => {
     }
     
     if (cancelledCount > 0) {
-        console.log(`⏹️ [CRON-METER] Cancelled ${cancelledCount} scheduled notifications for meter ${meterId}`);
     }
 };
 
@@ -208,8 +207,6 @@ const sendLevelNotification = async (notification, phoneNumbers, levelName) => {
  */
 export async function checkMeterAbnormalities() {
     try {
-        console.log('🔍 [CRON-METER] Starting meter abnormality check...');
-        console.log('⏰ [CRON-METER] Timestamp:', new Date().toISOString());
 
         // Get all active meters with their latest readings (like TGNPDCL_Backend)
         const meters = await prisma.meters.findMany({
@@ -241,7 +238,6 @@ export async function checkMeterAbnormalities() {
             }
         });
 
-        console.log(`📊 [CRON-METER] Found ${meters.length} active meters to check`);
 
         let totalAbnormalities = 0;
         let alertsSent = 0;
@@ -249,7 +245,6 @@ export async function checkMeterAbnormalities() {
         for (const meter of meters) {
             try {
                 if (!meter.meter_readings || meter.meter_readings.length === 0) {
-                    console.log(`⚠️ [CRON-METER] No readings found for meter ${meter.meterNumber}`);
                     continue;
                 }
 
@@ -287,7 +282,6 @@ export async function checkMeterAbnormalities() {
 
                 if (hasAbnormalitiesDetected) {
                     totalAbnormalities++;
-                    console.log(`🚨 [CRON-METER] Abnormalities detected for meter ${meter.meterNumber}:`, getAbnormalitySummary(abnormalities));
 
                     // Format power data for alerts (like TGNPDCL_Backend)
                     const powerData = formatPowerDataForAlerts(latestReading);
@@ -311,7 +305,6 @@ export async function checkMeterAbnormalities() {
 
                             if (existingNotifications.length === 0) {
                                 // No active notifications, create new ones
-                                console.log(`📱 [CRON-METER] Creating new escalation notifications for meter ${meter.meterNumber}`);
                                 
                                 const abnormalityType = getAbnormalitySummary(abnormalities);
                                 const phoneNumbers = getAllEscalationPhoneNumbers();
@@ -400,7 +393,6 @@ export async function checkMeterAbnormalities() {
                                     }
                                 }
                             } else {
-                                console.log(`⏭️ [CRON-METER] Skipping - ${existingNotifications.length} active notifications already exist for meter ${meter.meterNumber}`);
                             }
 
                             // Update the error state signature
@@ -419,7 +411,6 @@ export async function checkMeterAbnormalities() {
                     // Clear previous error state if no abnormalities detected (like TGNPDCL_Backend)
                     if (previousErrorStates.has(meter.serialNumber)) {
                         previousErrorStates.delete(meter.serialNumber);
-                        console.log(`🔄 [CRON-METER] Cleared error state for meter ${meter.serialNumber} - no abnormalities detected`);
                         
                         // Mark all active notifications as resolved
                         try {
@@ -434,7 +425,6 @@ export async function checkMeterAbnormalities() {
                                     resolvedat: new Date()
                                 }
                             });
-                            console.log(`✅ [CRON-METER] Marked all notifications as resolved for meter ${meter.meterNumber}`);
                             
                             // Cancel all scheduled notifications for this meter
                             cancelScheduledNotifications(meter.id);
@@ -449,8 +439,6 @@ export async function checkMeterAbnormalities() {
             }
         }
 
-        console.log(`✅ [CRON-METER] Meter abnormality check completed`);
-        console.log(`📊 [CRON-METER] Summary: ${totalAbnormalities} meters with abnormalities, ${alertsSent} alerts sent`);
 
         return {
             totalMeters: meters.length,

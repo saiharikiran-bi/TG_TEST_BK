@@ -98,7 +98,7 @@ class EmailService {
                 html,
             });
 
-            console.log(`✅ Verification email sent to ${email}`);
+
             return true;
         } catch (error) {
             console.error('❌ Email sending failed:', error);
@@ -119,7 +119,6 @@ class EmailService {
 
             // Check rate limiting
             if (!this.checkRateLimit(notification.id, priority)) {
-                console.log(`⏳ Rate limit reached for notification ${notification.id}, skipping email`);
                 return false;
             }
 
@@ -160,7 +159,6 @@ class EmailService {
             toEmails = toEmails.filter(email => email && email.includes('@'));
 
             if (toEmails.length === 0) {
-                console.log('⚠️ No valid email addresses found for notification');
                 return false;
             }
 
@@ -177,7 +175,7 @@ class EmailService {
             this.updateRateLimit(notification.id, priority);
             lastEmailSent.set(notification.id, new Date());
 
-            console.log(`✅ Notification email sent to ${toEmails.join(', ')}`);
+
             return true;
         } catch (error) {
             console.error('❌ Failed to send notification email:', error);
@@ -222,7 +220,7 @@ class EmailService {
                 priority: 'high'
             });
 
-            console.log('✅ System maintenance email sent');
+
             return true;
         } catch (error) {
             console.error('❌ Failed to send system maintenance email:', error);
@@ -248,7 +246,7 @@ class EmailService {
                 priority: 'high'
             });
 
-            console.log('✅ Alert email sent');
+
             return true;
         } catch (error) {
             console.error('❌ Failed to send alert email:', error);
@@ -260,14 +258,12 @@ class EmailService {
     // Send zero value alert (exactly like TGNPDCL_Backend)
     static async sendZeroValueAlert(meterSerial, feederName, dtrName, zeroValues, powerData, lastCommDate) {
         try {
-            console.log(`🚨 Starting zero value alert for meter ${meterSerial}`);
             
             // Check if we need to send alert (similar to TGNPDCL logic)
             const currentErrorSignature = this.generateErrorSignature(zeroValues, powerData);
             const previousSignature = this.previousErrorStates.get(meterSerial);
 
             if (previousSignature && previousSignature === currentErrorSignature) {
-                console.log(`⏳ Skipping alert for meter ${meterSerial}: No change in error state`);
                 return null;
             }
 
@@ -373,12 +369,11 @@ class EmailService {
             };
 
             const info = await transporter.sendMail(mailOptions);
-            console.log('📧 Zero value alert email sent successfully');
+
 
             // Send SMS alerts using integrated MSG91 (exactly like TGNPDCL)
             try {
                 await this.sendZeroValueAlertSMS(dtrName, feederName, zeroValues, powerData, lastCommDate);
-                console.log('📱 Zero value alert SMS sent successfully');
             } catch (smsError) {
                 console.error('❌ Failed to send SMS alert:', smsError);
             }
@@ -475,7 +470,6 @@ class EmailService {
             const result = await response.json();
             
             if (result.type === 'success') {
-                console.log(`✅ SMS sent successfully to ${mobile}`);
                 return result;
             } else {
                 console.error(`❌ SMS failed for ${mobile}:`, result.message);
@@ -852,12 +846,10 @@ class EmailService {
     // Send power failure alert (exactly like TGNPDCL implementation)
     static async sendPowerFailureAlert(meterSerial, feederName, dtrName, powerData) {
         try {
-            console.log(`🚨 [EMAIL] Starting power failure alert for meter ${meterSerial}`);
 
             // Check rate limiting
             const lastSent = this.lastEmailSent.get(meterSerial);
             if (lastSent && (Date.now() - lastSent.getTime()) < MIN_EMAIL_INTERVAL_MS) {
-                console.log(`⏰ [EMAIL] Rate limit active for meter ${meterSerial}, skipping email`);
                 return null;
             }
 
@@ -902,12 +894,11 @@ class EmailService {
             };
 
             const info = await transporter.sendMail(mailOptions);
-            console.log('📧 Power failure alert email sent successfully');
+
 
             // Send SMS alerts using integrated MSG91 (exactly like TGNPDCL)
             try {
                 await this.sendPowerFailureAlertSMS(dtrName, feederName, powerData);
-                console.log('📱 Power failure alert SMS sent successfully');
             } catch (smsError) {
                 console.error('❌ Failed to send SMS alert:', smsError);
             }
@@ -924,12 +915,10 @@ class EmailService {
     // Send meter abnormality alert (exactly like TGNPDCL implementation)
     static async sendMeterAbnormalityAlert(meterSerial, feederName, dtrName, abnormalityType, powerData) {
         try {
-            console.log(`🚨 [EMAIL] Starting meter abnormality alert for meter ${meterSerial}`);
 
             // Check rate limiting
             const lastSent = this.lastEmailSent.get(meterSerial);
             if (lastSent && (Date.now() - lastSent.getTime()) < MIN_EMAIL_INTERVAL_MS) {
-                console.log(`⏰ [EMAIL] Rate limit active for meter ${meterSerial}, skipping email`);
                 return null;
             }
 
@@ -975,12 +964,11 @@ class EmailService {
             };
 
             const info = await transporter.sendMail(mailOptions);
-            console.log('📧 Meter abnormality alert email sent successfully');
+
 
             // Send SMS alerts using integrated MSG91 (exactly like TGNPDCL)
             try {
                 await this.sendMeterAbnormalityAlertSMS(dtrName, feederName, abnormalityType, powerData);
-                console.log('📱 Meter abnormality alert SMS sent successfully');
             } catch (smsError) {
                 console.error('❌ Failed to send SMS alert:', smsError);
             }
