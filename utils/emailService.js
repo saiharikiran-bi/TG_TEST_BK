@@ -480,20 +480,26 @@ class EmailService {
                 throw new Error('MSG91 client not initialized properly');
             }
 
-            // Extract variables from the variables object
-            const var1 = variables.var || '';
-            const var2 = variables.var1 || '';
-            const var3 = variables.var2 || '';
-            const var4 = variables.var3 || '';
+            // Extract variables from the variables object - FIXED MAPPING
+            const dtrNumber = variables.var || '';           // ##var## -> DTR number
+            const meterNumber = variables.var1 || '';        // ##var1## -> Meter number  
+            const abnormalityType = variables.var2 || '';    // ##var2## -> Abnormality type
+            const timestamp = variables.var3 || '';          // ##var3## -> Timestamp
+            const lastCommDate = variables.var4 || '';      // ##var4## -> Last comm date
+            const level = variables.var5 || '';              // ##var5## -> Level
+            const message = variables.var6 || '';            // ##var6## -> Full message
             const DLT_TE_ID = variables.DLT_TE_ID;
 
             // Debug logging to troubleshoot template variable mapping
             console.log('📱 [SMS DEBUG] Template variables:', {
                 templateId: templateId || MSG91_CONFIG.TEMPLATE_ID,
-                VAR1: var1 || '',
-                VAR2: var2 || '',
-                VAR3: var3 || '',
-                VAR4: var4 || ''
+                'var1': dtrNumber || '',
+                'var2': meterNumber || '',
+                'var3': abnormalityType || '',
+                'var4': timestamp || '',
+                'var5': lastCommDate || '',
+                'var6': level || '',
+                'var7': message || ''
             });
             
             // Debug: Log MSG91 configuration
@@ -507,27 +513,29 @@ class EmailService {
             // Use MSG91 package to send SMS with template
             const smsInstance = msg91Client.getSMS();
             
-            // Prepare the recipient data with variables
-            // Try different variable formats that MSG91 might expect
+            // Prepare the recipient data with variables - TRYING MULTIPLE FORMATS
             const recipientData = {
                 mobile: mobile,
-                // Format 1: Standard VAR1, VAR2, etc.
-                VAR1: var1 || '',      // Maps to ##var## in template (DTR Number)
-                VAR2: var2 || '',      // Maps to ##var1## in template (Meter Number)
-                VAR3: var3 || '',      // Maps to ##var2## in template (Abnormality Values)
-                VAR4: var4 || '',      // Maps to ##var3## in template (Timestamp)
+                // Try multiple variable formats that MSG91 might support
+                var: dtrNumber || '',            // DTR number
+                var1: meterNumber || '',         // Meter number  
+                var2: abnormalityType || '',     // Abnormality type
+                var3: timestamp || '',           // Timestamp
+                var4: lastCommDate || '',        // Last comm date
+                var5: level || '',               // Level
+                var6: message || '',             // Full message
                 
-                // Format 2: Alternative variable names (some templates use these)
-                var1: var1 || '',
-                var2: var2 || '',
-                var3: var3 || '',
-                var4: var4 || '',
+                // Alternative formats
+                VAR1: dtrNumber || '',
+                VAR2: meterNumber || '',
+                VAR3: abnormalityType || '',
+                VAR4: timestamp || '',
                 
-                // Format 3: Direct template variable names
-                '##var##': var1 || '',
-                '##var1##': var2 || '',
-                '##var2##': var3 || '',
-                '##var3##': var4 || ''
+                // Direct values
+                dtrNumber: dtrNumber || '',
+                meterNumber: meterNumber || '',
+                abnormalityType: abnormalityType || '',
+                timestamp: timestamp || ''
             };
             
             // Debug: Log the exact data being sent to MSG91
@@ -599,126 +607,7 @@ class EmailService {
         }
     }
 
-    // Test MSG91 connection and template
-    static async testMSG91Connection() {
-        try {
-            console.log('🧪 Testing MSG91 connection...');
-            
-            if (!MSG91_CONFIG.AUTH_TOKEN) {
-                throw new Error('MSG91_AUTH_TOKEN not configured');
-            }
-            
-            if (!msg91Client || !msg91Client.initialized) {
-                throw new Error('MSG91 client not initialized properly');
-            }
-
-            // Test with a dummy number and template
-            const smsInstance = msg91Client.getSMS();
-            const testResult = await smsInstance.send(
-                MSG91_CONFIG.TEMPLATE_ID, // flow_id
-                {
-                    mobile: '9999999999', // Dummy number for testing
-                    VAR1: 'TEST_DTR',
-                    VAR2: 'TEST_METER',
-                    VAR3: 'TEST_ABNORMALITY',
-                    VAR4: 'TEST_TIME'
-                },
-                {
-                    senderId: MSG91_CONFIG.SENDER_ID,
-                    shortURL: false
-                }
-            );
-
-            console.log('✅ MSG91 connection test successful:', testResult);
-            return testResult;
-        } catch (error) {
-            console.error('❌ MSG91 connection test failed:', error);
-            throw error;
-        }
-    }
-
-    // Test SMS with actual template variables
-    static async testSMSTemplate() {
-        try {
-            console.log('🧪 Testing SMS template with variables...');
-            
-            if (!MSG91_CONFIG.AUTH_TOKEN) {
-                throw new Error('MSG91_AUTH_TOKEN not configured');
-            }
-            
-            if (!msg91Client || !msg91Client.initialized) {
-                throw new Error('MSG91 client not initialized properly');
-            }
-
-            // Test with actual values that should appear in SMS
-            const smsInstance = msg91Client.getSMS();
-            const testResult = await smsInstance.send(
-                MSG91_CONFIG.TEMPLATE_ID, // flow_id
-                {
-                    mobile: '9999999999', // Dummy number for testing
-                    // Test all variable formats
-                    VAR1: 'DTR001',
-                    VAR2: 'MTR1001',
-                    VAR3: 'Test Abnormality',
-                    VAR4: 'Test Time',
-                    var1: 'DTR001',
-                    var2: 'MTR1001',
-                    var3: 'Test Abnormality',
-                    var4: 'Test Time',
-                    '##var##': 'DTR001',
-                    '##var1##': 'MTR1001',
-                    '##var2##': 'Test Abnormality',
-                    '##var3##': 'Test Time'
-                },
-                {
-                    senderId: MSG91_CONFIG.SENDER_ID,
-                    shortURL: false
-                }
-            );
-
-            console.log('✅ SMS template test successful:', testResult);
-            return testResult;
-        } catch (error) {
-            console.error('❌ SMS template test failed:', error);
-            throw error;
-        }
-    }
-
-    // Test SMS sending to real phone numbers
-    static async testRealSMSSending() {
-        try {
-            console.log('🧪 Testing real SMS sending...');
-            
-            // Get phone numbers from escalation levels
-            const phoneNumbers = getAllEscalationPhoneNumbers();
-            console.log('📱 [TEST] Phone numbers found:', phoneNumbers);
-            
-            if (!phoneNumbers || phoneNumbers.length === 0) {
-                throw new Error('No phone numbers found in escalation levels');
-            }
-            
-            // Test with first phone number
-            const testPhone = phoneNumbers[0];
-            console.log('📱 [TEST] Testing with phone:', testPhone);
-            
-            const result = await this.sendSMS(
-                testPhone,
-                MSG91_CONFIG.TEMPLATE_ID,
-                {
-                    var: 'TEST_DTR',
-                    var1: 'TEST_METER',
-                    var2: 'TEST_ABNORMALITY',
-                    var3: 'TEST_TIME'
-                }
-            );
-            
-            console.log('✅ Real SMS test successful:', result);
-            return result;
-        } catch (error) {
-            console.error('❌ Real SMS test failed:', error);
-            throw error;
-        }
-    }
+   
 
     // Get MSG91 configuration status
     static getMSG91Status() {
@@ -732,40 +621,8 @@ class EmailService {
         };
     }
 
-    // Troubleshoot MSG91 template issues
-    static troubleshootMSG91Template() {
-        console.log('🔍 MSG91 Template Troubleshooting Guide:');
-        console.log('');
-        console.log('1. Check Template Configuration in MSG91 Dashboard:');
-        console.log('   - Go to MSG91 Dashboard > Templates');
-        console.log('   - Verify Template ID:', MSG91_CONFIG.TEMPLATE_ID);
-        console.log('   - Ensure template is "Approved" and "Active"');
-        console.log('');
-        console.log('2. Verify Template Variables:');
-        console.log('   - Template should contain: ##var##, ##var1##, ##var2##, ##var3##');
-        console.log('   - Variables should be properly configured in template');
-        console.log('');
-        console.log('3. Check DLT Approval:');
-        console.log('   - Template might need DLT approval');
-        console.log('   - Contact MSG91 support if template is pending approval');
-        console.log('');
-        console.log('4. Test Template Variables:');
-        console.log('   - Use EmailService.testSMSTemplate() to test with dummy data');
-        console.log('   - Check if variables are being replaced in test SMS');
-        console.log('');
-        console.log('5. Common Issues:');
-        console.log('   - Template not approved by DLT');
-        console.log('   - Wrong variable format in template');
-        console.log('   - Template inactive or expired');
-        console.log('   - Variables not properly mapped in MSG91 dashboard');
-        
-        return {
-            templateId: MSG91_CONFIG.TEMPLATE_ID,
-            status: 'Check MSG91 Dashboard for template approval status'
-        };
-    }
+    
 
-    // Send zero value alert SMS (exactly like TGNPDCL)
     static async sendZeroValueAlertSMS(dtrNumber, meterNumber, zeroValues, powerData, lastCommDate) {
         try {
             console.log('📱 [SMS] Starting zero value alert SMS...');
@@ -1222,7 +1079,7 @@ class EmailService {
         }
     }
 
-    static async sendMeterAbnormalityAlertSMS(dtrNumber, meterNumber, abnormalityType, powerData) {
+    static async sendMeterAbnormalityAlertSMS(dtrNumber, meterNumber, abnormalityType, powerData, lastCommDate) {
         try {
             console.log('📱 [SMS] Starting meter abnormality alert SMS...');
             
@@ -1234,20 +1091,67 @@ class EmailService {
             
             console.log('📱 [SMS] Phone numbers to send SMS:', phoneNumbers);
             
+            // Format power data for SMS - include key abnormality readings
+            const abnormalityReadings = this.formatAbnormalityReadingsForSMS(powerData, abnormalityType);
+            
             const recipients = phoneNumbers.map(phone => ({
                 mobile: phone,
-                var: dtrNumber,        // VAR1: DTR Number
-                var1: meterNumber,     // VAR2: Meter Number
-                    var2: `Abnormality: ${abnormalityType}`,
-                    var3: new Date().toLocaleString(),
-                    DLT_TE_ID: MSG91_CONFIG.DLT_TE_ID
+                var: dtrNumber,                    // VAR1: DTR Number (Near DTR)
+                var1: meterNumber,                 // VAR2: Meter Number (Feeder Name) 
+                var2: abnormalityType,             // VAR3: Abnormality Type (Abnormality values)
+                var3: lastCommDate,                // VAR4: Last Communication Date (Occured at)
+                var4: abnormalityReadings,         // VAR5: Abnormality Readings Data
+                DLT_TE_ID: MSG91_CONFIG.DLT_TE_ID
             }));
 
-            console.log('📱 [SMS] Recipients prepared:', recipients);
+            console.log('📱 [SMS] Recipients prepared with abnormality data:', recipients);
             return await this.sendBulkSMS(MSG91_CONFIG.TEMPLATE_ID, recipients);
         } catch (error) {
             console.error('❌ Failed to send meter abnormality alert SMS:', error);
             throw error;
+        }
+    }
+
+    // Format abnormality readings for SMS display
+    static formatAbnormalityReadingsForSMS(powerData, abnormalityType) {
+        try {
+            if (!powerData) return 'No reading data available';
+            
+            // Extract key readings based on abnormality type
+            let readings = [];
+            
+            if (abnormalityType.includes('Fuse Blown')) {
+                // For fuse blown, show average voltage and current readings
+                if (powerData.voltageR !== undefined) readings.push(`Avg Voltage: ${powerData.voltageR || 0}V`);
+                if (powerData.currentR !== undefined) readings.push(`Avg Current: ${powerData.currentR || 0}A`);
+                if (powerData.powerFactor !== undefined) readings.push(`PF: ${powerData.powerFactor || 0}`);
+            } else if (abnormalityType.includes('Zero')) {
+                // For zero values, show the specific zero readings
+                if (powerData.kwh === 0) readings.push('kWh: 0');
+                if (powerData.kvah === 0) readings.push('kVAh: 0');
+                if (powerData.kw === 0) readings.push('kW: 0');
+                if (powerData.kva === 0) readings.push('kVA: 0');
+            } else {
+                // For other abnormalities, show general power data
+                if (powerData.kwh !== undefined) readings.push(`kWh: ${powerData.kwh}`);
+                if (powerData.kvah !== undefined) readings.push(`kVAh: ${powerData.kvah}`);
+                if (powerData.kw !== undefined) readings.push(`kW: ${powerData.kw}`);
+                if (powerData.kva !== undefined) readings.push(`kVA: ${powerData.kva}`);
+                if (powerData.powerFactor !== undefined) readings.push(`PF: ${powerData.powerFactor}`);
+                if (powerData.voltageR !== undefined) readings.push(`Voltage: ${powerData.voltageR}V`);
+                if (powerData.currentR !== undefined) readings.push(`Current: ${powerData.currentR}A`);
+            }
+            
+            // Add timestamp if available
+            if (powerData.readingDate) {
+                const readingDate = new Date(powerData.readingDate);
+                readings.push(`Time: ${readingDate.toLocaleString()}`);
+            }
+            
+            return readings.length > 0 ? readings.join(', ') : 'Reading data unavailable';
+        } catch (error) {
+            console.error('❌ Error formatting abnormality readings for SMS:', error);
+            return 'Error formatting readings';
         }
     }
 }
