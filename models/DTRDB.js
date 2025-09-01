@@ -1157,8 +1157,18 @@ class DTRDB {
                 ? Math.max(...allReadings.map(r => r.kVA !== null ? r.kVA : 0))
                 : 0;
 
-            // Calculate cumulative KVAh across all meters (handle null values safely)
-            const cumulativeKVAh = allReadings.reduce((sum, r) => sum + (r.kVAh !== null ? r.kVAh : 0), 0);
+            // Get the latest kVAh value from each meter and sum them for total cumulative KVAh
+            const latestKVAhByMeter = {};
+            validReadings.forEach(reading => {
+                const meterId = reading.meterId;
+                if (!latestKVAhByMeter[meterId] || reading.readingDate > latestKVAhByMeter[meterId].readingDate) {
+                    latestKVAhByMeter[meterId] = reading;
+                }
+            });
+            
+            const cumulativeKVAh = Object.values(latestKVAhByMeter).reduce((sum, reading) => 
+                sum + (reading.kVAh !== null ? reading.kVAh : 0), 0
+            );
 
             // Calculate average phase-specific power factors
             const avgRphPF = validReadings.reduce((sum, r) => sum + (r.rphPowerFactor || r.averagePF || 0), 0) / validReadings.length;
