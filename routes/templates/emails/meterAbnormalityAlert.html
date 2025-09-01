@@ -4,111 +4,87 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Meter Abnormality Alert</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            max-width: 600px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: #f4f4f4;
-        }
-        .container {
-            background-color: #ffffff;
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 0 10px rgba(0,0,0,0.1);
-        }
-        .header {
-            background-color: #fd7e14;
-            color: white;
-            padding: 20px;
-            border-radius: 8px;
-            text-align: center;
-            margin-bottom: 20px;
-        }
-        .alert-icon {
-            font-size: 48px;
-            margin-bottom: 10px;
-        }
-        .content {
-            background-color: #f8f9fa;
-            padding: 20px;
-            border-radius: 8px;
-            margin: 20px 0;
-            border-left: 4px solid #fd7e14;
-        }
-        .details {
-            background-color: #fff3cd;
-            padding: 15px;
-            border-radius: 8px;
-            margin: 15px 0;
-            border-left: 4px solid #ffc107;
-        }
-        .abnormality {
-            background-color: #f8d7da;
-            padding: 15px;
-            border-radius: 8px;
-            margin: 15px 0;
-            border-left: 4px solid #dc3545;
-        }
-        .timestamp {
-            text-align: center;
-            color: #666;
-            font-size: 14px;
-            margin-top: 20px;
-            padding-top: 20px;
-            border-top: 1px solid #eee;
-        }
-        .warning {
-            color: #fd7e14;
-            font-weight: bold;
-        }
-    </style>
 </head>
-<body>
-    <div class="container">
-        <div class="header">
-            <div class="alert-icon">⚠️</div>
-            <h1>Meter Abnormality Alert</h1>
-            <p>Investigation required</p>
-        </div>
+<body style="margin: 0; padding: 0; font-family: Arial, sans-serif;">
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#efefef" style="width: 100%;">
+        <tr>
+            <td align="center" style="padding: 20px">
+                <table cellpadding="0" cellspacing="0" style="width: 100%; max-width: 600px; margin: 0 auto; background-color: #ffffff; font-family: Google Sans, 'Roboto', 'Segoe UI', 'Helvetica Neue', Frutiger, 'Frutiger Linotype', 'Dejavu Sans', 'Trebuchet MS', Verdana, Arial, sans-serif !important;">
+                    <tr>
+                        <td style="padding: 20px 20px 20px 20px">
+                            <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                                <tr>
+                                    <td align="left" width="30%">
+                                        <img style="width: 30%; height: 100%" src="https://bestinfra.org/BI_IMAGES/blue-logo.png" alt="Best Infra Logo" />
+                                    </td>
+                                    
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
 
-        <div class="content">
-            <h2>Abnormality Alert Details</h2>
-            <p><strong>DTR Name:</strong> <!-- DTR_NAME --></p>
-            <p><strong>Feeder Name:</strong> <!-- FEEDER_NAME --></p>
-            <p><strong>Meter Serial:</strong> <!-- METER_SERIAL --></p>
-        </div>
+                    <tr>
+                        <td style="padding: 5px 20px">
+                            <p style="margin: 0; padding: 0">Dear Officer,</p>
+                            <br />
+                            <p style="margin: 0; padding: 0">
+                                This is an important alert regarding the detection of a meter abnormality for
+                                <strong><!-- DTR_NAME --> (<!-- FEEDER_NAME -->)</strong>. Please investigate this issue promptly.
+                            </p>
+                        </td>
+                    </tr>
 
-        <div class="abnormality">
-            <h3>Abnormality Type</h3>
-            <p class="warning"><strong><!-- ABNORMALITY_TYPE --></strong></p>
-            <p>This abnormality has been detected and requires investigation.</p>
-        </div>
+                    <tr>
+                        <td style="padding: 5px 20px">
+                            <p style="font-weight: bold; margin: 0; padding: 0">
+                                Abnormality Type:
+                            </p>
+                            <p style="margin: 5px 0; padding: 0; color: #fd7e14; font-weight: bold;"><strong><!-- ABNORMALITY_TYPE --></strong></p>
+                        </td>
+                    </tr>
 
-        <div class="details">
-            <h3>Power Data Information</h3>
-            <pre style="background-color: #f8f9fa; padding: 10px; border-radius: 5px; overflow-x: auto;"><!-- POWER_DATA --></pre>
-        </div>
+                    <tr>
+                        <td style="padding: 5px 20px">
+                            <p style="font-weight: bold; margin: 0; padding: 0">
+                                Power Data Information:
+                            </p>
+                            <div style="background-color: #f8f9fa; padding: 10px; border-radius: 5px; overflow-x: auto; font-family: monospace; font-size: 12px;"><!-- POWER_DATA --></div>
+                        </td>
+                    </tr>
 
-        <div class="content">
-            <h3>Action Required</h3>
-            <p class="warning">⚠️ This abnormality requires investigation and appropriate action.</p>
-            <ul>
-                <li>Review the meter readings and data</li>
-                <li>Check for any calibration issues</li>
-                <li>Verify meter communication status</li>
-                <li>Inspect for any physical abnormalities</li>
-                <li>Document findings and actions taken</li>
-            </ul>
-        </div>
+                    <tr>
+                        <td style="padding: 5px 20px">
+                            <p style="margin: 0; padding: 0">
+                                This is an automated system generated alert created on Date:
+                                <!-- TIMESTAMP -->
+                            </p>
+                        </td>
+                    </tr>
 
-        <div class="timestamp">
-            <p>Alert generated on <!-- TIMESTAMP --></p>
-            <p>This is an automated alert from the TGNPDCL monitoring system.</p>
-        </div>
-    </div>
+                    <tr>
+                        <td style="padding: 15px 20px 30px 20px">
+                            <p style="margin: 0; padding: 0; font-weight: bold">
+                                Best Regards,
+                            </p>
+                            <p style="margin: 0; padding: 0">
+                                Smart Metering Solutions.
+                            </p>
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <td style="background-color: #f8f9fa; padding: 20px; text-align: center; border-top: 1px solid #dee2e6;">
+                            <p style="margin: 0; padding: 0; color: #6c757d; font-size: 12px;">
+                                This is an automated email. Please do not reply to this message.
+                            </p>
+                            <p style="margin: 5px 0 0 0; padding: 0; color: #6c757d; font-size: 12px;">
+                                © 2024 Best Infra. All rights reserved.
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
 </body>
 </html>
