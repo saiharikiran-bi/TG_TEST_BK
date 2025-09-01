@@ -1123,14 +1123,33 @@ class DTRDB {
         }
     }
 
-    static async getInstantaneousStats(dtrId) {
+    static async getInstantaneousStats(dtrId, meterIdentifier = null) {
         try {
             const dtr = await DTRDB.resolveDTRId(dtrId);
-            // Get all meters associated with this DTR
-            const meters = await prisma.meters.findMany({
-                where: { dtrId: dtr.id },
-                select: { id: true }
-            });
+            // Get meters associated with this DTR (optionally a single meter by meterIdentifier)
+            let meters = [];
+            if (meterIdentifier) {
+                // Try to find a single meter by serialNumber or meterNumber within this DTR
+                const meter = await prisma.meters.findFirst({
+                    where: {
+                        dtrId: dtr.id,
+                        OR: [
+                            { serialNumber: { equals: meterIdentifier, mode: 'insensitive' } },
+                            { meterNumber: { equals: meterIdentifier, mode: 'insensitive' } }
+                        ]
+                    },
+                    select: { id: true }
+                });
+                if (meter) {
+                    meters = [meter];
+                }
+            }
+            if (meters.length === 0) {
+                meters = await prisma.meters.findMany({
+                    where: { dtrId: dtr.id },
+                    select: { id: true }
+                });
+            }
             
             const meterIds = meters.map(m => m.id);
             
@@ -1553,14 +1572,32 @@ class DTRDB {
 
     
 
-    static async getDTRMainGraphAnalytics(dtrId, period) {
+    static async getDTRMainGraphAnalytics(dtrId, period, meterIdentifier = null) {
         try {
             const dtr = await DTRDB.resolveDTRId(dtrId);
             // Get all meters associated with this DTR
-            const meters = await prisma.meters.findMany({
-                where: { dtrId: dtr.id },
-                select: { id: true }
-            });
+            let meters = [];
+            if (meterIdentifier) {
+                const meter = await prisma.meters.findFirst({
+                    where: {
+                        dtrId: dtr.id,
+                        OR: [
+                            { serialNumber: { equals: meterIdentifier, mode: 'insensitive' } },
+                            { meterNumber: { equals: meterIdentifier, mode: 'insensitive' } }
+                        ]
+                    },
+                    select: { id: true }
+                });
+                if (meter) {
+                    meters = [meter];
+                }
+            }
+            if (meters.length === 0) {
+                meters = await prisma.meters.findMany({
+                    where: { dtrId: dtr.id },
+                    select: { id: true }
+                });
+            }
             
             const meterIds = meters.map(m => m.id);
             
@@ -1816,14 +1853,32 @@ class DTRDB {
         }
     }
 
-    static async getKVAMetrics(dtrId, period) {
+    static async getKVAMetrics(dtrId, period, meterIdentifier = null) {
         try {
             const dtr = await DTRDB.resolveDTRId(dtrId);
             // Get all meters associated with this DTR
-            const meters = await prisma.meters.findMany({
-                where: { dtrId: dtr.id },
-                select: { id: true }
-            });
+            let meters = [];
+            if (meterIdentifier) {
+                const meter = await prisma.meters.findFirst({
+                    where: {
+                        dtrId: dtr.id,
+                        OR: [
+                            { serialNumber: { equals: meterIdentifier, mode: 'insensitive' } },
+                            { meterNumber: { equals: meterIdentifier, mode: 'insensitive' } }
+                        ]
+                    },
+                    select: { id: true }
+                });
+                if (meter) {
+                    meters = [meter];
+                }
+            }
+            if (meters.length === 0) {
+                meters = await prisma.meters.findMany({
+                    where: { dtrId: dtr.id },
+                    select: { id: true }
+                });
+            }
             
             const meterIds = meters.map(m => m.id);
             
