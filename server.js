@@ -34,7 +34,7 @@ const corsOptions = {
             'http://localhost:3000',
             'http://localhost:5173',
             'http://localhost:4221',
-            'https://www.test35.bestinfra.app'
+            'htt'
         ];
         
         if (allowedOrigins.indexOf(origin) !== -1 || process.env.CORS_ORIGIN === '*') {

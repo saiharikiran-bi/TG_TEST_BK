@@ -93,7 +93,6 @@ export const getFeedersForDTR = async (req, res) => {
     try {
         const { dtrId } = req.params;
         
-        // Prevent invalid DTR IDs from being processed
         if (!dtrId || dtrId === 'stats' || dtrId === 'alerts') {
             return res.status(400).json({
                 success: false,
@@ -102,8 +101,8 @@ export const getFeedersForDTR = async (req, res) => {
             });
         }
         
+        console.log('dtrId', dtrId)
         const feedersData = await DTRDB.getFeedersForDTR(dtrId);
-
         
         // Map feeders data to match frontend expectations
         const mappedFeeders = feedersData.feeders.map((feeder, idx) => ({
@@ -134,7 +133,6 @@ export const getFeedersForDTR = async (req, res) => {
             lastCommunication: feedersData.dtr.lastCommunication || null
         };
 
-        // Get location hierarchy for the first feeder (assuming all feeders are in same location)
         let locationHierarchy = null;
         if (feedersData.feeders.length > 0 && feedersData.feeders[0].location) {
             locationHierarchy = feedersData.feeders[0].location.hierarchy || [];
