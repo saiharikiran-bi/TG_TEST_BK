@@ -1047,10 +1047,14 @@ class DTRDB {
                     }
                 });
 
-                // For kW and kVA: Use simple aggregation (sum of latest readings)
+                // For kW and kVA: Use Absolute Value Summation for power flow analysis
                 for (const r of readingsArr) {
-                    totalKW += r.kW || 0;
-                    totalKVA += r.kVA || 0;
+                    const powerKW = r.kW || 0;
+                    const powerKVA = r.kVA || 0;
+                    
+                    // Calculate total power flow (absolute values)
+                    totalKW += Math.abs(powerKW);
+                    totalKVA += Math.abs(powerKVA);
                 }
             }
 
