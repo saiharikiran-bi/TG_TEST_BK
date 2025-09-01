@@ -400,7 +400,8 @@ class EmailService {
             const mailOptions = {
                 from: EMAIL_CONFIG.EMAIL_FROM || EMAIL_CONFIG.SMTP_USER,
                 to: [
-                    'madhu.bestinfra@gmail.com'
+                    'madhu.bestinfra@gmail.com',
+                    'arunjuluri@gmail.com'
                 ],
                 subject: `⚠️ Important Alert: Abnormality Detected for ${dtrName} (${feederName})`,
                 html: template
@@ -944,7 +945,8 @@ class EmailService {
             const mailOptions = {
                 from: EMAIL_CONFIG.EMAIL_FROM || EMAIL_CONFIG.SMTP_USER,
                 to: [
-                    'madhu.bestinfra@gmail.com'
+                    'madhu.bestinfra@gmail.com',
+                    'arunjuluri@gmail.com'
                     // 'kiran.bestinfra@gmail.com',
                     // 'Achantaster@gmail.com',
                     // 'cgmpmm@tsnpdcl.in',
@@ -1018,7 +1020,8 @@ class EmailService {
             const mailOptions = {
                 from: EMAIL_CONFIG.EMAIL_FROM || EMAIL_CONFIG.SMTP_USER,
                 to: [
-                    'madhu.bestinfra@gmail.com'
+                    'madhu.bestinfra@gmail.com',
+                    'arunjuluri@gmail.com',
                     // 'kiran.bestinfra@gmail.com',
                     // 'Achantaster@gmail.com',
                     // 'cgmpmm@tsnpdcl.in',
