@@ -77,25 +77,113 @@ const cancelScheduledNotifications = (meterId) => {
 // Helper function to send SMS for a specific level
 const sendLevelNotification = async (notification, phoneNumbers, levelName) => {
     try {
-        console.log(`📱 [CRON-METER] Sending ${levelName} SMS for meter ${notification.meterNumber}`);
-        
-        for (const phone of phoneNumbers) {
-            try {
-                await EmailService.sendSMS(
-                    phone,
-                    process.env.MSG_TEMPLATE_ID,
-                    {
-                        var: notification.dtrnumber,           // ##var## -> DTR number (e.g., DTR-002)
-                        var1: notification.meternumber,       // ##var1## -> Meter number (e.g., 23010587) - using as feeder name
-                        var2: notification.abnormalitytype,   // ##var2## -> Abnormality Values (e.g., HT Fuse Blown (R - Phase))
-                        var3: new Date().toLocaleString()     // ##var3## -> Occurred at (timestamp)
-                    }
-                );
-                console.log(`✅ [CRON-METER] ${levelName} SMS sent to ${phone}`);
-            } catch (smsError) {
-                console.error(`❌ [CRON-METER] Failed to send ${levelName} SMS to ${phone}:`, smsError);
-            }
+        // Add safety checks for notification object
+        if (!notification) {
+            console.error('❌ [CRON-METER] Notification object is null or undefined');
+            return;
         }
+        
+        if (!notification.meterid) {
+            console.error('❌ [CRON-METER] Notification missing meterid:', notification);
+            return;
+        }
+        
+        console.log(`📱 [CRON-METER] Sending ${levelName} SMS for meter ${notification.meterNumber || 'Unknown'}`);
+        console.log(`📱 [CRON-METER] Notification details:`, {
+            id: notification.id,
+            meterid: notification.meterid,
+            meternumber: notification.meternumber,
+            dtrnumber: notification.dtrnumber,
+            abnormalitytype: notification.abnormalitytype
+        });
+        
+        // Get the latest reading with power data for abnormality readings
+        const latestReading = await prisma.meter_readings.findFirst({
+            where: { meterId: notification.meterid },
+            orderBy: { readingDate: 'desc' },
+            select: { 
+                readingDate: true,
+                kWh: true,
+                kVAh: true,
+                kW: true,
+                kVA: true,
+                averagePF: true,
+                averageVoltage: true,
+                averageCurrent: true
+            }
+        });
+        
+        if (!latestReading) {
+            console.warn(`⚠️ [CRON-METER] No readings found for meter ${notification.meterid}`);
+        }
+        
+        const lastCommDate = latestReading?.readingDate ? 
+            latestReading.readingDate.toLocaleString() : 
+            'Unknown';
+        
+        // Prepare power data for SMS
+        const powerData = latestReading ? {
+            readingDate: latestReading.readingDate,
+            kwh: latestReading.kWh,
+            kvah: latestReading.kVAh,
+            kw: latestReading.kW,
+            kva: latestReading.kVA,
+            powerFactor: latestReading.averagePF,
+            voltageR: latestReading.averageVoltage,
+            voltageY: latestReading.averageVoltage,
+            voltageB: latestReading.averageVoltage,
+            currentR: latestReading.averageCurrent,
+            currentY: latestReading.averageCurrent,
+            currentB: latestReading.averageCurrent
+        } : null;
+        
+        console.log(`📱 [CRON-METER] Power data for SMS:`, powerData);
+        
+                 // Debug: Log all SMS variables being sent
+         const smsVariables = {
+             var: notification.dtrnumber || 'Unknown DTR',           // ##var## -> DTR number
+             var1: notification.meternumber || 'Unknown Meter',     // ##var1## -> Meter number (using as feeder name)
+             var2: notification.abnormalitytype || 'Unknown',       // ##var2## -> Abnormality Values
+             var3: new Date().toLocaleString(),                     // ##var3## -> Occurred at (timestamp)
+             var4: lastCommDate,                                   // ##var4## -> Last communication date
+             var5: notification.level.toString(),                   // ##var5## -> Escalation level
+             var6: notification.message                             // ##var6## -> Full message
+         };
+         
+         console.log(`📱 [SMS DEBUG] Variables for ${levelName} SMS:`, smsVariables);
+         
+         // Send SMS to each phone number with proper variables
+         for (const phone of phoneNumbers) {
+             try {
+                 await EmailService.sendSMS(
+                     phone,
+                     process.env.MSG_TEMPLATE_ID,
+                     smsVariables
+                 );
+                 console.log(`✅ [CRON-METER] ${levelName} SMS sent to ${phone}`);
+             } catch (smsError) {
+                 console.error(`❌ [CRON-METER] Failed to send ${levelName} SMS to ${phone}:`, smsError);
+             }
+         }
+         
+         console.log(`✅ [CRON-METER] ${levelName} SMS sent to all escalation contacts`);
+         
+         // Send email alert for this abnormality
+         try {
+             console.log(`📧 [CRON-METER] Sending ${levelName} email alert for meter ${notification.meternumber}`);
+             
+             await EmailService.sendMeterAbnormalityAlert(
+                 notification.meternumber,           // meterSerial
+                 notification.meternumber,           // feederName (using meter number as feeder)
+                 notification.dtrnumber,             // dtrName
+                 notification.abnormalitytype,       // abnormalityType
+                 powerData                           // powerData
+             );
+             
+             console.log(`✅ [CRON-METER] ${levelName} email alert sent successfully`);
+         } catch (emailError) {
+             console.error(`❌ [CRON-METER] Failed to send ${levelName} email alert:`, emailError);
+         }
         
         // Mark notification as sent
         await prisma.escalation_notifications.update({
@@ -107,8 +195,9 @@ const sendLevelNotification = async (notification, phoneNumbers, levelName) => {
         });
         
         console.log(`✅ [CRON-METER] ${levelName} notification marked as sent`);
-    } catch (error) {
-        console.error(`❌ [CRON-METER] Failed to send ${levelName} notification:`, error);
+    } catch (smsError) {
+        console.error(`❌ [CRON-METER] Failed to send ${levelName} SMS:`, smsError);
+        console.error(`❌ [CRON-METER] Notification object:`, notification);
     }
 };
 
@@ -132,7 +221,7 @@ export async function checkMeterAbnormalities() {
                 locations: {
                     include: {
                         dtrs: {
-                            select: {
+                    select: {
                                 dtrNumber: true
                             }
                         }
@@ -166,14 +255,7 @@ export async function checkMeterAbnormalities() {
 
                 const latestReading = meter.meter_readings[0];
                 
-                // Debug: Log the meter data structure
-                console.log(`🔍 [DEBUG] Meter ${meter.meterNumber} data:`, {
-                    meterId: meter.id,
-                    dtrId: meter.dtrId,
-                    dtrs: meter.dtrs,
-                    locations: meter.locations,
-                    locationDtrs: meter.locations?.dtrs
-                });
+
                 
                 // Try to get DTR number from the meter's DTR relationship
                 let dtrNumber = meter.dtrs?.dtrNumber;
@@ -193,15 +275,15 @@ export async function checkMeterAbnormalities() {
                 
                 const meterNumber = meter.meterNumber || 'Unknown Meter';
                 
-                // Debug: Log the extracted values
-                console.log(`🔍 [DEBUG] Extracted values for meter ${meter.meterNumber}:`, {
-                    dtrNumber,
-                    meterNumber
-                });
+
+
+
 
                 // Analyze the reading for abnormalities (like TGNPDCL_Backend)
                 const abnormalities = analyzeMeterReadings(latestReading);
                 const hasAbnormalitiesDetected = hasAbnormalities(abnormalities);
+
+
 
                 if (hasAbnormalitiesDetected) {
                     totalAbnormalities++;
@@ -233,6 +315,8 @@ export async function checkMeterAbnormalities() {
                                 
                                 const abnormalityType = getAbnormalitySummary(abnormalities);
                                 const phoneNumbers = getAllEscalationPhoneNumbers();
+                                
+
                                 
                                 if (phoneNumbers && phoneNumbers.length > 0) {
                                     // Create notification records for each abnormality type
@@ -434,7 +518,7 @@ export async function checkSpecificMeterAbnormalities(meterId) {
                 locations: {
                     include: {
                         dtrs: {
-                            select: {
+                    select: {
                                 dtrNumber: true
                             }
                         }
