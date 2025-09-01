@@ -9,11 +9,11 @@ export const escalationLevels = [
                 name: 'Line Manager',
                 phone: '916303457002',
             },
-            // {
-            //     role: 'LM1',
-            //     name: 'Line Manager 1',
-            //     phone: '917901678140',
-            // },
+            {
+                role: 'LM1',
+                name: 'Line Manager 1',
+                phone: '918712484703',
+            },
             // {
             //     role: 'LM2',
             //     name: 'Line Manager 2',
