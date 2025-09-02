@@ -1,29 +1,25 @@
-name: TGNPDCL Backend Deploy to Xampp
+# Testing runners
+# Testing Runners 2
+name: Railway Backend Deploy to Xampp
 
 on:
   push:
     branches:
-      - Sandeep
+      - SP
 
 jobs:
-  deploy:
-    runs-on: [self-hosted, tg_bk]
+  deploy-backend:
+    runs-on: [self-hosted,admin_fr]
 
     steps:
-      - name: Checkout Repo
+      - name: Checkout Backend Code
         uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-
-      - name: Install Dependencies
-        run: npm ci
-
-
-      - name: Deploy to XAMPP htdocs folder
+      - name: Install dependencies
         run: |
-          robocopy dist "C:\xampp\htdocs\Testing\pip_2" /MIR
+          npm install
+      - name: Deploy Backend files to XAMPP htdocs folder
+        run: |
+          robocopy . "C:\xampp\htdocs\Testing\pip_2" /MIR /XD  .git .github 
           exit 0
-#this is an Test Deployment for TGNPDCL Smart Meter
+#Checking Runners 
+#Checking Runners 
