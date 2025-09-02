@@ -1,0 +1,25 @@
+# Testing runners
+# Testing Runners 2
+name: Railway Backend Deploy to Xampp
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy-backend:
+    runs-on: [self-hosted,tg_bk]
+
+    steps:
+      - name: Checkout Backend Code
+        uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          npm install
+      - name: Deploy Backend files to XAMPP htdocs folder
+        run: |
+          robocopy . "C:\xampp\htdocs\Testing\pip_2" /MIR /XD  .git .github 
+          exit 0
+#Checking Runners 
+#Checking Runners 
