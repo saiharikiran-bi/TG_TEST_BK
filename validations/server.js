@@ -20,7 +20,7 @@ import { initializeCronJobs } from './cron/jobs.js';
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 4000;
+const PORT = process.env.PORT || 4249;
 
 const prisma = new PrismaClient();
 
