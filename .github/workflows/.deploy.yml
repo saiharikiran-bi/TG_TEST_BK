@@ -9,7 +9,7 @@ on:
 
 jobs:
   deploy-backend:
-    runs-on: [self-hosted,admin_fr]
+    runs-on: [self-hosted,tg_bk]
 
     steps:
       - name: Checkout Backend Code
