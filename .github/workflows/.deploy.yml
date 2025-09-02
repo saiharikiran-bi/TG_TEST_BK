@@ -1,4 +1,4 @@
-name: TGNPDCL Frontend Deploy to Xampp
+name: TGNPDCL Backend Deploy to Xampp
 
 on:
   push:
@@ -21,8 +21,6 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
-    #   - name: Build React App
-    #     run: npm run build
 
       - name: Deploy to XAMPP htdocs folder
         run: |
