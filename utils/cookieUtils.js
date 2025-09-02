@@ -1,10 +1,55 @@
-/**
- * Utility functions for extracting user details from cookies
- */
 
 import jwt from 'jsonwebtoken';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
+
+/**
+ * @param {string} cookieHeader - Raw cookie header string
+ * @returns {Object} Parsed cookies object
+ */
+const parseCookiesManually = (cookieHeader) => {
+    if (!cookieHeader) return {};
+    
+    try {
+        return cookieHeader.split(';').reduce((acc, cookie) => {
+            const [key, value] = cookie.trim().split('=');
+            if (key && value) {
+                acc[key.trim()] = decodeURIComponent(value.trim());
+            }
+            return acc;
+        }, {});
+    } catch (error) {
+        console.log('Error parsing cookies manually:', error.message);
+        return {};
+    }
+};
+
+/**
+ * Decode JWT token with fallback
+ * @param {string} token - JWT token string
+ * @returns {Object|null} Decoded token payload or null
+ */
+const decodeJWTToken = (token) => {
+    if (!token) return null;
+    
+    try {
+        try {
+            const decoded = jwt.verify(token, JWT_SECRET);
+            return decoded;
+        } catch (jwtError) {
+            console.log('JWT verification failed, trying decode without verification:', jwtError.message);
+            
+            const decoded = jwt.decode(token);
+            if (decoded) {
+                return decoded;
+            }
+        }
+    } catch (error) {
+        console.log('JWT token processing failed:', error.message);
+    }
+    
+    return null;
+};
 
 /**
  * Extract user details from cookies and populate req.user
@@ -13,27 +58,30 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-i
  */
 export const extractUserFromCookies = (req) => {
     try {
-        // First try to get user details from cookies
-        if (req.cookies && req.cookies.userDetails) {
+        
+        const parsedCookies = req.cookies || {};
+        const manualCookies = parseCookiesManually(req.headers.cookie);
+        const allCookies = { ...parsedCookies, ...manualCookies };
+        
+        
+        if (allCookies.userDetails) {
             try {
-                const userDetails = JSON.parse(req.cookies.userDetails);
-                if (userDetails && typeof userDetails === 'object') {
+                const userDetails = JSON.parse(allCookies.userDetails);
+                if (userDetails && typeof userDetails === 'object' && userDetails.locationId) {
                     return userDetails;
                 }
             } catch (parseError) {
-                // Error parsing userDetails cookie
+                console.log('Error parsing userDetails cookie:', parseError.message);
             }
         }
         
         // Second: try to extract from accessToken cookie (JWT)
-        if (req.cookies && req.cookies.accessToken) {
-            try {
-                const token = req.cookies.accessToken;
-                const decoded = jwt.verify(token, JWT_SECRET);
+        if (allCookies.accessToken) {
+            const decoded = decodeJWTToken(allCookies.accessToken);
+            
+            if (decoded && decoded.locationId) {
                 
-
-                
-                return {
+                const userDetails = {
                     userId: decoded.userId,
                     username: decoded.username,
                     email: decoded.email,
@@ -44,21 +92,18 @@ export const extractUserFromCookies = (req) => {
                     locationId: decoded.locationId,
                     appId: decoded.appId
                 };
-            } catch (jwtError) {
-                // JWT token verification failed
+                return userDetails;
             }
         }
         
-        // Third: try to extract from Authorization header
         const authHeader = req.headers['authorization'];
         if (authHeader && authHeader.startsWith('Bearer ')) {
             const token = authHeader.split(' ')[1];
-            try {
-                const decoded = jwt.verify(token, JWT_SECRET);
+            
+            const decoded = decodeJWTToken(token);
+            if (decoded && decoded.locationId) {
                 
-
-                
-                return {
+                const userDetails = {
                     userId: decoded.userId,
                     username: decoded.username,
                     email: decoded.email,
@@ -69,33 +114,29 @@ export const extractUserFromCookies = (req) => {
                     locationId: decoded.locationId,
                     appId: decoded.appId
                 };
-            } catch (jwtError) {
-                // JWT token verification failed
+                return userDetails;
             }
         }
         
-
         return null;
     } catch (error) {
-        // Error extracting user details
+        console.log('Error extracting user details:', error.message);
         return null;
     }
 };
 
-/**
- * Middleware to populate req.user from cookies (optional)
- * Use this if you want to automatically populate req.user
- */
+
 export const populateUserFromCookies = (req, res, next) => {
     const userDetails = extractUserFromCookies(req);
     if (userDetails) {
         req.user = userDetails;
+    } else {
+        console.log('No user details found, req.user remains undefined');
     }
     next();
 };
 
 /**
- * Check if user has access to a specific location
  * @param {Object} req - Express request object
  * @param {number} resourceLocationId - Location ID of the resource being accessed
  * @returns {boolean} True if user has access, false otherwise

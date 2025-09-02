@@ -20,7 +20,7 @@ import { initializeCronJobs } from './cron/jobs.js';
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 4000;
+const PORT = process.env.PORT || 4249;
 
 const prisma = new PrismaClient();
 
@@ -49,7 +49,15 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.use(cookieParser()); // Add cookie parser middleware
+app.use(cookieParser(undefined, {
+    decode: function(val) {
+        try {
+            return decodeURIComponent(val);
+        } catch (e) {
+            return val;
+        }
+    }
+})); // Add cookie parser middleware with custom decode function
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
